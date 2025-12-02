@@ -37,7 +37,7 @@ const AdminDetails = () => {
         try {
             setLoading(true);
             const response = await apiRequest(`/superadmin/admin/${id}`, {
-                method: 'POST'
+                method: 'GET'
             });
 
             // Check if API is returning array or object
