@@ -375,7 +375,7 @@ const ProductManagement = () => {
                                     </div>
                                     <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                                         <div className="flex space-x-1">
-                                            <button
+                                            {/* <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     openDetailsModal(product);
@@ -384,7 +384,7 @@ const ProductManagement = () => {
                                             >
                                                 <Info className="w-3 h-3 mr-1" />
                                                 Details
-                                            </button>
+                                            </button> */}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
