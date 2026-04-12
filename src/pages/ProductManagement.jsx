@@ -37,9 +37,15 @@ const ProductManagement = () => {
         price: '',
         category: '',
         threshold: '',
-        minValue: '',
         outletId: outletId
     });
+
+    // Recipe state
+    const [inventoryItems, setInventoryItems] = useState([]);
+    const [recipeRows, setRecipeRows] = useState([{ inventoryItemId: '', itemType: 'RAW_MATERIAL', quantityPerServing: '' }]);
+    const [editRecipeRows, setEditRecipeRows] = useState([]);
+    const [recipeLoading, setRecipeLoading] = useState(false);
+    const ITEM_TYPES = ['RAW_MATERIAL', 'SERVING_ITEM', 'PACKAGING_ITEM'];
 
     // Image file states
     const [imageFile, setImageFile] = useState(null);
@@ -52,7 +58,6 @@ const ProductManagement = () => {
         price: '',
         category: '',
         threshold: '',
-        minValue: '',
         outletId: outletId
     });
 
@@ -62,7 +67,32 @@ const ProductManagement = () => {
 
     useEffect(() => {
         fetchProducts();
+        fetchInventoryItems();
     }, []);
+
+    const fetchInventoryItems = async () => {
+        try {
+            const res = await apiRequest(`/superadmin/outlets/inventory-items/${outletId}`);
+            setInventoryItems(res.items || []);
+        } catch (e) { console.error('Failed to load inventory items', e) }
+    };
+
+    const fetchProductRecipe = async (productId) => {
+        try {
+            const res = await apiRequest(`/superadmin/outlets/products/${productId}/recipe`);
+            const rows = (res.recipe || []).map(r => ({ inventoryItemId: String(r.inventoryItemId), itemType: r.itemType, quantityPerServing: String(r.quantityPerServing) }));
+            setEditRecipeRows(rows.length > 0 ? rows : [{ inventoryItemId: '', itemType: 'RAW_MATERIAL', quantityPerServing: '' }]);
+        } catch (e) { console.error('Failed to load recipe', e) }
+    };
+
+    const saveRecipe = async (productId, rows) => {
+        const validRows = rows.filter(r => r.inventoryItemId && parseFloat(r.quantityPerServing) > 0);
+        if (validRows.length === 0) throw new Error('Add at least 1 recipe row with a valid quantity');
+        await apiRequest(`/superadmin/outlets/products/${productId}/recipe`, {
+            method: 'POST',
+            body: { rows: validRows.map(r => ({ inventoryItemId: parseInt(r.inventoryItemId), itemType: r.itemType, quantityPerServing: parseFloat(r.quantityPerServing) })) }
+        });
+    };
 
     useEffect(() => {
         if (selectedCategory === 'All') {
@@ -126,83 +156,89 @@ const ProductManagement = () => {
     // MODIFIED: Use direct fetch for FormData submission
     const handleAddProduct = async (e) => {
         e.preventDefault();
+        // Validate recipe first
+        const validRecipeRows = recipeRows.filter(r => r.inventoryItemId && parseFloat(r.quantityPerServing) > 0);
+        if (validRecipeRows.length === 0) {
+            toast.error('Recipe mapping is required. Add at least 1 ingredient.');
+            return;
+        }
         try {
             const productFormData = new FormData();
-
             productFormData.append('name', formData.name);
             productFormData.append('description', formData.description);
             productFormData.append('price', formData.price);
             productFormData.append('category', formData.category);
             productFormData.append('threshold', formData.threshold || '10');
-            productFormData.append('minValue', formData.minValue || '0');
+            // Obsolete minValue removed
             productFormData.append('outletId', formData.outletId);
-
-            if (imageFile) {
-                productFormData.append('image', imageFile);
-            }
+            if (imageFile) productFormData.append('image', imageFile);
 
             const token = localStorage.getItem("token");
             const response = await fetch(`${API_BASE_URL}/superadmin/outlets/add-product/`, {
                 method: 'POST',
-                headers: {
-                    ...(token && { Authorization: `Bearer ${token}` }),
-                },
-                body: productFormData, // Send FormData directly
+                headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                body: productFormData,
             });
-
             const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.message || 'Failed to add product');
-            }
+            if (!response.ok) throw new Error(data.message || 'Failed to add product');
+
+            // Save recipe after product created
+            setRecipeLoading(true);
+            await saveRecipe(data.product.id, validRecipeRows);
 
             setShowAddModal(false);
             resetFormData();
+            setRecipeRows([{ inventoryItemId: '', itemType: 'RAW_MATERIAL', quantityPerServing: '' }]);
             fetchProducts();
-            toast.success('Product added successfully!');
+            toast.success('Product added with recipe!');
         } catch (err) {
             toast.error(err.message || 'Failed to add product');
+        } finally {
+            setRecipeLoading(false);
         }
     };
 
     // MODIFIED: Use direct fetch for FormData submission
     const handleEditProduct = async (e) => {
         e.preventDefault();
+        const validRecipeRows = editRecipeRows.filter(r => r.inventoryItemId && parseFloat(r.quantityPerServing) > 0);
+        if (validRecipeRows.length === 0) {
+            toast.error('Recipe mapping is required. Add at least 1 ingredient.');
+            return;
+        }
         try {
             const productFormData = new FormData();
-
             productFormData.append('name', editFormData.name);
             productFormData.append('description', editFormData.description);
             productFormData.append('price', editFormData.price);
             productFormData.append('category', editFormData.category);
             productFormData.append('threshold', editFormData.threshold || '10');
-            productFormData.append('minValue', editFormData.minValue || '0');
+            // Obsolete minValue removed
             productFormData.append('outletId', editFormData.outletId);
-
-            if (editImageFile) {
-                productFormData.append('image', editImageFile);
-            }
+            if (editImageFile) productFormData.append('image', editImageFile);
 
             const token = localStorage.getItem("token");
             const response = await fetch(`${API_BASE_URL}/superadmin/outlets/update-product/${productToEdit.id}`, {
                 method: 'PUT',
-                headers: {
-                    ...(token && { Authorization: `Bearer ${token}` }),
-                },
-                body: productFormData, // Send FormData directly
+                headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                body: productFormData,
             });
-
             const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.message || 'Failed to update product');
-            }
+            if (!response.ok) throw new Error(data.message || 'Failed to update product');
+
+            // Save recipe
+            setRecipeLoading(true);
+            await saveRecipe(productToEdit.id, validRecipeRows);
 
             setShowEditModal(false);
             setProductToEdit(null);
             resetEditFormData();
             fetchProducts();
-            toast.success('Product updated successfully!');
+            toast.success('Product updated with recipe!');
         } catch (err) {
             toast.error(err.message || 'Failed to update product');
+        } finally {
+            setRecipeLoading(false);
         }
     };
 
@@ -244,7 +280,6 @@ const ProductManagement = () => {
             price: '',
             category: '',
             threshold: '',
-            minValue: '',
             outletId: outletId
         });
         clearImage(false);
@@ -257,7 +292,6 @@ const ProductManagement = () => {
             price: '',
             category: '',
             threshold: '',
-            minValue: '',
             outletId: outletId
         });
         clearImage(true);
@@ -280,11 +314,81 @@ const ProductManagement = () => {
             description: product.description,
             price: product.price.toString(),
             category: product.category,
-            threshold: product.inventory?.threshold?.toString() || '',
-            minValue: product.minValue?.toString() || '0',
+            threshold: product.inventory?.threshold?.toString() || '10',
             outletId: outletId
         });
+        fetchProductRecipe(product.id);
         setShowEditModal(true);
+    };
+
+    // Recipe row helpers
+    const addRecipeRow = (isEdit) => {
+        const newRow = { inventoryItemId: '', itemType: 'RAW_MATERIAL', quantityPerServing: '' };
+        if (isEdit) setEditRecipeRows(r => [...r, newRow]);
+        else setRecipeRows(r => [...r, newRow]);
+    };
+    const removeRecipeRow = (idx, isEdit) => {
+        if (isEdit) setEditRecipeRows(r => r.filter((_, i) => i !== idx));
+        else setRecipeRows(r => r.filter((_, i) => i !== idx));
+    };
+    const updateRecipeRow = (idx, field, value, isEdit) => {
+        if (isEdit) setEditRecipeRows(r => r.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+        else setRecipeRows(r => r.map((row, i) => i === idx ? { ...row, [field]: value } : row));
+    };
+
+    const RecipeBuilder = ({ rows, isEdit }) => {
+        const estimatedCost = rows.reduce((total, row) => {
+            const item = inventoryItems.find(i => i.id === parseInt(row.inventoryItemId));
+            return total + (item ? (item.costPerUnit * parseFloat(row.quantityPerServing || 0)) : 0);
+        }, 0);
+        return (
+            <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                    <label className="block text-sm font-medium text-gray-700">🧾 Recipe Mapping <span className="text-red-500">*</span></label>
+                    <button type="button" onClick={() => addRecipeRow(isEdit)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded text-gray-700">+ Add Row</button>
+                </div>
+                {rows.map((row, idx) => {
+                    const selectedItem = inventoryItems.find(i => i.id === parseInt(row.inventoryItemId));
+                    return (
+                        <div key={idx} className="grid grid-cols-12 gap-2 items-center border border-gray-200 rounded-lg p-2">
+                            <div className="col-span-5">
+                                <select value={row.inventoryItemId} onChange={e => updateRecipeRow(idx, 'inventoryItemId', e.target.value, isEdit)}
+                                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gray-400">
+                                    <option value="">— Select Item —</option>
+                                    {inventoryItems.map(i => <option key={i.id} value={i.id}>{i.itemName} ({i.stockUnit})</option>)}
+                                </select>
+                            </div>
+                            <div className="col-span-2">
+                                <select value={row.itemType} onChange={e => updateRecipeRow(idx, 'itemType', e.target.value, isEdit)}
+                                    className="w-full border border-gray-300 rounded px-1 py-1.5 text-xs focus:outline-none">
+                                    {ITEM_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                                </select>
+                            </div>
+                            <div className="col-span-3">
+                                <div className="flex items-center gap-1">
+                                    <input type="number" value={row.quantityPerServing} onChange={e => updateRecipeRow(idx, 'quantityPerServing', e.target.value, isEdit)}
+                                        placeholder="Qty" min="0.001" step="0.001"
+                                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none" />
+                                    <span className="text-xs text-gray-400 whitespace-nowrap">{selectedItem?.stockUnit || ''}</span>
+                                </div>
+                            </div>
+                            <div className="col-span-2 flex justify-end">
+                                <button type="button" onClick={() => removeRecipeRow(idx, isEdit)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
+                            </div>
+                        </div>
+                    );
+                })}
+                {estimatedCost > 0 && (
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm flex justify-between">
+                        <span className="text-gray-500">Estimated cost per serving:</span>
+                        <span className="font-semibold text-gray-800">₹{estimatedCost.toFixed(2)}</span>
+                    </div>
+                )}
+                {rows.filter(r => r.inventoryItemId && parseFloat(r.quantityPerServing) > 0).length === 0 && (
+                    <p className="text-xs text-orange-500">⚠ Add at least 1 ingredient to enable inventory tracking</p>
+                )}
+            </div>
+        );
     };
 
     if (loading) {
@@ -366,11 +470,8 @@ const ProductManagement = () => {
                                     <p className="text-gray-600 text-sm mb-2 line-clamp-2">{product.description || 'No description available'}</p>
                                     <div className="flex items-center justify-between mb-3">
                                         <span className="text-2xl font-bold text-green-600">₹{product.price}</span>
-                                        <Badge variant={(product.inventory?.quantity || 0) > 0 ? 'success' : 'danger'}>
-                                            {(product.inventory?.quantity || 0) > 0
-                                                ? `${product.inventory?.quantity || 0} in stock`
-                                                : 'Sold out'
-                                            }
+                                        <Badge variant={product.recipeConfigured ? 'success' : 'warning'}>
+                                            {product.recipeConfigured ? '✓ Recipe Set' : '⚠ No Recipe'}
                                         </Badge>
                                     </div>
                                     <div className="flex justify-between items-center pt-2 border-t border-gray-100">
@@ -562,37 +663,18 @@ const ProductManagement = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Alert Threshold
                             </label>
-                            <input
-                                type="number"
-                                name="threshold"
-                                value={formData.threshold}
-                                onChange={handleInputChange}
-                                min="0"
-                                placeholder="10"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            <input type="number" name="threshold" value={formData.threshold} onChange={handleInputChange} min="0" placeholder="10" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
+                    </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Min Value *
-                            </label>
-                            <input
-                                type="number"
-                                name="minValue"
-                                value={formData.minValue}
-                                onChange={handleInputChange}
-                                required
-                                min="0"
-                                placeholder="0"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
+                    {/* Recipe Mapping */}
+                    <div className="border-t border-gray-200 pt-4 mt-2">
+                        <RecipeBuilder rows={recipeRows} isEdit={false} />
                     </div>
                 </form>
             </Modal>
@@ -750,37 +832,16 @@ const ProductManagement = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Alert Threshold
-                            </label>
-                            <input
-                                type="number"
-                                name="threshold"
-                                value={editFormData.threshold}
-                                onChange={handleEditInputChange}
-                                min="0"
-                                placeholder="10"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Alert Threshold</label>
+                            <input type="number" name="threshold" value={editFormData.threshold} onChange={handleEditInputChange} min="0" placeholder="10" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
                         </div>
+                    </div>
 
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Min Value *
-                            </label>
-                            <input
-                                type="number"
-                                name="minValue"
-                                value={editFormData.minValue}
-                                onChange={handleEditInputChange}
-                                required
-                                min="0"
-                                placeholder="0"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
+                    {/* Recipe Mapping */}
+                    <div className="border-t border-gray-200 pt-4 mt-2">
+                        <RecipeBuilder rows={editRecipeRows} isEdit={true} />
                     </div>
                 </form>
             </Modal>
@@ -866,10 +927,6 @@ const ProductManagement = () => {
                             <div>
                                 <span className="font-semibold">Category: </span>
                                 <span>{selectedProduct.category}</span>
-                            </div>
-                            <div>
-                                <span className="font-semibold">Min Value: </span>
-                                <span className="text-blue-600 font-semibold">{selectedProduct.minValue || 0}</span>
                             </div>
                             <div>
                                 <span className="font-semibold">Outlet ID: </span>
