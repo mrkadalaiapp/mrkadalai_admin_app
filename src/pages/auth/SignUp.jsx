@@ -220,8 +220,7 @@ const SignUp = () => {
         >
             <div className="bg-white p-8 sm:p-12 rounded-2xl shadow-xl w-full max-w-md">
                 <div className="text-center">
-                    <img src="https://ezjbzdcdqvarkkbteptl.supabase.co/storage/v1/object/public/images/logo2.jpeg
-" alt="Logo" className="mx-auto h-20 w-auto mb-4" />
+                    <img src="https://ezjbzdcdqvarkkbteptl.supabase.co/storage/v1/object/public/images/logo2.jpeg" alt="Logo" className="mx-auto h-20 w-auto mb-4" />
                     <h2 className="text-3xl font-bold text-gray-900 mb-2">
                         Create Admin Account
                     </h2>
