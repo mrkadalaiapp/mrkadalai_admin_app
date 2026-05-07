@@ -1,345 +1,587 @@
 import React, { useState, useEffect } from 'react'
-import Button from '../components/ui/Button';
-import Card from '../components/ui/Card';
-import Table from '../components/ui/Table';
-import { apiRequest } from '../utils/api';
-import toast from 'react-hot-toast';
-import Loader from '../components/ui/Loader';
+import { apiRequest } from '../utils/api'
+import { toast } from 'react-hot-toast'
 
-const Expenditure = () => {
-    const [activeTab, setActiveTab] = useState('tracker');
-    const [searchQuery, setSearchQuery] = useState('');
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
-    const [allExpense, setAllExpense] = useState([]);
-    const [loading, setLoading] = useState(false);
+const PAYMENT_METHODS = ['CASH', 'UPI', 'CARD', 'WALLET']
 
-    const outletId = localStorage.getItem('outletId');
+const today = () => new Date().toISOString().split('T')[0]
+const weekAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split('T')[0] }
 
-    useEffect(() => {
-        fetchExpenses();
-    }, []);
+const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
-    const fetchExpenses = async () => {
-        setLoading(true);
-        try {
-            const data = await apiRequest(`/superadmin/outlets/get-expenses/${outletId}/`);
-            setAllExpense(data.expenses || []);
-        } catch (error) {
-            console.error('Error fetching expenses:', error);
-        }
-        setLoading(false);
-    };
+export default function Expenditure() {
+  const outletId = parseInt(localStorage.getItem('outletId'))
+  const [tab, setTab] = useState('tracker') // tracker | add | masters
 
-    const fetchExpensesByDateRange = async () => {
-        if (!startDate || !endDate) return;
+  // Tracker
+  const [expenses, setExpenses] = useState([])
+  const [dateFrom, setDateFrom] = useState(weekAgo())
+  const [dateTo, setDateTo] = useState(today())
+  const [trackLoading, setTrackLoading] = useState(false)
 
-        setLoading(true);
-        try {
-            const data = await apiRequest('/superadmin/outlets/get-expenses-bydate/', {
-                method: 'GET',
-                body: {
-                    outletId: outletId,
-                    from: startDate,
-                    to: endDate
-                }
-            });
-            setAllExpense(data.expenses || []);
-        } catch (error) {
-            console.error('Error fetching expenses by date range:', error);
-        }
-        setLoading(false);
-    };
+  // Masters data
+  const [categories, setCategories] = useState([])
+  const [expenseNames, setExpenseNames] = useState([])
+  const [vendors, setVendors] = useState([])
+  const [inventoryItems, setInventoryItems] = useState([])
 
-    // ✅ Removed automatic fetching on startDate or endDate change
+  // Add Expense form
+  const [form, setForm] = useState({ expenseDate: today(), categoryId: '', expenseNameId: '', quantity: '', unit: '', unitPrice: '', method: 'CASH', vendorName: '', notes: '' })
+  const [selectedCategory, setSelectedCategory] = useState(null)
+  const [filteredNames, setFilteredNames] = useState([])
+  const [totalAmount, setTotalAmount] = useState(0)
+  const [addLoading, setAddLoading] = useState(false)
+  const [billImage, setBillImage] = useState(null)   // File object
+  const [vendorPanel, setVendorPanel] = useState(false) // Vendor quick-select panel
+  const [billPreview, setBillPreview] = useState(null)  // View bill modal URL
 
-    const filterByRange = (data) => {
-        if (!startDate || !endDate) return data;
-        return data.filter(item => {
-            const itemDate = new Date(item.expenseDate).toISOString().split('T')[0];
-            return itemDate >= startDate && itemDate <= endDate;
-        });
-    };
+  // Masters sub-tab
+  const [masterTab, setMasterTab] = useState('category')
+  const [catForm, setCatForm] = useState({ name: '', isStockAffecting: false })
+  const [nameForm, setNameForm] = useState({ name: '', categoryId: '', linkedInventoryItemId: '' })
+  const [vendorForm, setVendorForm] = useState({ name: '' })
+  const [masterLoading, setMasterLoading] = useState(false)
 
-    const filteredExpense = filterByRange(allExpense).filter(expense =>
-        expense.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        expense.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        expense.method.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  useEffect(() => { if (outletId) { fetchExpenses(); fetchMasterData() } }, [outletId])
 
-    const expensehistory = filteredExpense.map(expense => ([
-        expense.category,
-        expense.description,
-        `₹${expense.amount}`,
-        new Date(expense.expenseDate).toLocaleDateString('en-GB'),
-        expense.method
-    ]));
+  // Auto-calc total
+  useEffect(() => {
+    const q = parseFloat(form.quantity) || 0
+    const p = parseFloat(form.unitPrice) || 0
+    setTotalAmount(q && p ? (q * p).toFixed(2) : '')
+  }, [form.quantity, form.unitPrice])
 
-    const totalAmount = filterByRange(allExpense).reduce((acc, curr) => acc + curr.amount, 0);
+  // Filter expense names when category changes
+  useEffect(() => {
+    if (form.categoryId) {
+      const cat = categories.find(c => c.id === parseInt(form.categoryId))
+      setSelectedCategory(cat || null)
+      const names = expenseNames.filter(n => n.categoryId === parseInt(form.categoryId))
+      setFilteredNames(names)
+      setForm(f => ({ ...f, expenseNameId: '' }))
+    } else {
+      setSelectedCategory(null)
+      setFilteredNames([])
+    }
+  }, [form.categoryId, categories, expenseNames])
 
-    const [formData, setFormData] = useState({
-        expenseDate: '',
-        category: '',
-        description: '',
-        amount: '',
-        method: '',
-        paidTo: ''
-    });
+  const fetchMasterData = async () => {
+    try {
+      const [catRes, nameRes, vendorRes, invRes] = await Promise.all([
+        apiRequest(`/superadmin/outlets/expense-categories/${outletId}`),
+        apiRequest(`/superadmin/outlets/expense-names/${outletId}`),
+        apiRequest(`/superadmin/outlets/vendors/${outletId}`),
+        apiRequest(`/superadmin/outlets/inventory-items/${outletId}`),
+      ])
+      setCategories(catRes.categories || [])
+      setExpenseNames(nameRes.names || [])
+      setVendors(vendorRes.vendors || [])
+      setInventoryItems(invRes.items || [])
+    } catch (e) { console.error('Failed to load master data', e) }
+  }
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
-    };
+  const fetchExpenses = async () => {
+    setTrackLoading(true)
+    try {
+      const res = await apiRequest('/superadmin/outlets/get-expense-by-date/', {
+        method: 'POST', body: { outletId, from: dateFrom, to: dateTo }
+      })
+      setExpenses(res.expenses || [])
+    } catch (e) { toast.error('Failed to load expenses') }
+    finally { setTrackLoading(false) }
+  }
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setLoading(true);
+  const submitExpense = async () => {
+    if (!form.expenseDate || !form.method) return toast.error('Date and payment method are required')
+    if (!form.categoryId) return toast.error('Category is required')
+    if (!form.expenseNameId) return toast.error('Expense name is required')
+    if (selectedCategory?.isStockAffecting && !form.quantity) return toast.error('Quantity is required for this category')
+    if (!totalAmount && !form.unitPrice) return toast.error('Unit price is required')
 
-        try {
-            const data = await apiRequest('/superadmin/outlets/add-expenses/', {
-                method: 'POST',
-                body: {
-                    outletId: outletId,
-                    description: formData.description,
-                    category: formData.category,
-                    amount: parseFloat(formData.amount),
-                    method: formData.method,
-                    paidTo: formData.paidTo,
-                    expenseDate: formData.expenseDate
-                }
-            });
+    setAddLoading(true)
+    try {
+      const selectedName = filteredNames.find(n => n.id === parseInt(form.expenseNameId))
 
-            toast.success("Expense Added Successfully");
-            handleReset();
-            fetchExpenses();
-        } catch (error) {
-            console.error('Error adding expense:', error);
-            toast.error(`Error: ${error.message}`);
-        }
-        setLoading(false);
-    };
+      // Use FormData to support optional bill image upload
+      const fd = new FormData()
+      fd.append('outletId', outletId)
+      fd.append('expenseDate', form.expenseDate)
+      fd.append('categoryId', parseInt(form.categoryId))
+      fd.append('category', selectedCategory?.name || '')
+      fd.append('expenseNameId', parseInt(form.expenseNameId))
+      fd.append('description', selectedName?.name || '')
+      if (form.quantity) fd.append('quantity', parseFloat(form.quantity))
+      if (form.unit) fd.append('unit', form.unit)
+      if (form.unitPrice) fd.append('unitPrice', parseFloat(form.unitPrice))
+      fd.append('amount', totalAmount ? parseFloat(totalAmount) : parseFloat(form.unitPrice))
+      fd.append('method', form.method)
+      if (form.vendorName) fd.append('vendorName', form.vendorName)
+      if (selectedName?.linkedInventoryItemId) fd.append('linkedInventoryItemId', selectedName.linkedInventoryItemId)
+      if (billImage) fd.append('billImage', billImage)
 
-    const handleReset = () => {
-        setFormData({
-            expenseDate: '',
-            category: '',
-            description: '',
-            amount: '',
-            method: '',
-            paidTo: ''
-        });
-    };
+      const token = localStorage.getItem('token')
+      const apiBase = import.meta.env.VITE_API_URL || 'http://13.201.49.59:5500/api'
+      const resp = await fetch(`${apiBase}/superadmin/outlets/add-expenses/`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      })
+      if (!resp.ok) { const err = await resp.json(); throw new Error(err.message || 'Failed') }
 
-    return (
-        <div className='space-y-6'>
-            <h1 className='font-bold text-4xl'>
-                Expenditure Management
-            </h1>
+      toast.success('Expense added' + (selectedCategory?.isStockAffecting ? ' & stock updated' : ''))
+      setForm({ expenseDate: today(), categoryId: '', expenseNameId: '', quantity: '', unit: '', unitPrice: '', method: 'CASH', vendorName: '' })
+      setBillImage(null)
+      setTotalAmount(0)
+      fetchExpenses()
+    } catch (e) { toast.error(e.message || 'Failed to add expense') }
+    finally { setAddLoading(false) }
+  }
 
-            <div className='flex justify-between items-center flex-wrap gap-4'>
-                <div className='flex space-x-4'>
-                    <Button
-                        variant={activeTab === 'tracker' ? 'black' : 'secondary'}
-                        onClick={() => setActiveTab('tracker')}
-                    >
-                        Expense Tracker
-                    </Button>
-                    <Button
-                        variant={activeTab === 'add' ? 'black' : 'secondary'}
-                        onClick={() => setActiveTab('add')}
-                    >
-                        Add Expense
-                    </Button>
-                </div>
+  // Masters handlers
+  const addCategory = async () => {
+    if (!catForm.name) return toast.error('Name required')
+    setMasterLoading(true)
+    try {
+      await apiRequest('/superadmin/outlets/expense-categories/', { method: 'POST', body: { outletId, ...catForm } })
+      toast.success('Category added'); setCatForm({ name: '', isStockAffecting: false }); fetchMasterData()
+    } catch (e) { toast.error(e.message || 'Failed') }
+    finally { setMasterLoading(false) }
+  }
 
-                {/* ✅ Updated Date Range Filter */}
-                {activeTab === 'tracker' && (
-                    <div className="flex space-x-4 items-end">
-                        <div>
-                            <label className="block text-sm text-gray-700 mb-1">From Date</label>
-                            <input
-                                type="date"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                className="p-2 border rounded"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm text-gray-700 mb-1">To Date</label>
-                            <input
-                                type="date"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
-                                className="p-2 border rounded"
-                            />
-                        </div>
-                        {/* <Button variant="black" onClick={fetchExpensesByDateRange} disabled={loading}>
-                            {loading ? 'Loading...' : 'Apply'}
-                        </Button> */}
-                        <Button variant="secondary" onClick={() => { setStartDate(''); setEndDate(''); fetchExpenses(); }}>
-                            Clear
-                        </Button>
-                    </div>
-                )}
+  const deleteCategory = async (id) => {
+    if (!window.confirm('Delete this category?')) return
+    try { await apiRequest(`/superadmin/outlets/expense-categories/${id}`, { method: 'DELETE' }); toast.success('Deleted'); fetchMasterData() }
+    catch (e) { toast.error('Failed') }
+  }
+
+  const addExpenseName = async () => {
+    if (!nameForm.name || !nameForm.categoryId) return toast.error('Name and category required')
+    setMasterLoading(true)
+    try {
+      await apiRequest('/superadmin/outlets/expense-names/', { method: 'POST', body: { outletId, ...nameForm, categoryId: parseInt(nameForm.categoryId), linkedInventoryItemId: nameForm.linkedInventoryItemId ? parseInt(nameForm.linkedInventoryItemId) : null } })
+      toast.success('Expense name added'); setNameForm({ name: '', categoryId: '', linkedInventoryItemId: '' }); fetchMasterData()
+    } catch (e) { toast.error(e.message || 'Failed') }
+    finally { setMasterLoading(false) }
+  }
+
+  const deleteExpenseName = async (id) => {
+    if (!window.confirm('Delete this expense name?')) return
+    try { await apiRequest(`/superadmin/outlets/expense-names/${id}`, { method: 'DELETE' }); toast.success('Deleted'); fetchMasterData() }
+    catch (e) { toast.error('Failed') }
+  }
+
+  const addVendor = async () => {
+    if (!vendorForm.name) return toast.error('Vendor name required')
+    setMasterLoading(true)
+    try {
+      await apiRequest('/superadmin/outlets/vendors/', { method: 'POST', body: { outletId, ...vendorForm } })
+      toast.success('Vendor added'); setVendorForm({ name: '' }); fetchMasterData()
+    } catch (e) { toast.error(e.message || 'Failed') }
+    finally { setMasterLoading(false) }
+  }
+
+  const deleteVendor = async (id) => {
+    if (!window.confirm('Delete this vendor?')) return
+    try { await apiRequest(`/superadmin/outlets/vendors/${id}`, { method: 'DELETE' }); toast.success('Deleted'); fetchMasterData() }
+    catch (e) { toast.error('Failed') }
+  }
+
+  const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Expenditure</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Track expenses and manage inventory stock inward</p>
+      </div>
+
+      {/* Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-1">
+          {[['tracker','Expense Tracker'],['add','Add Expense'],['masters','Masters']].map(([key,label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${tab === key ? 'border-gray-900 text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* ── Tab: Expense Tracker ───────────────────────────────────────────── */}
+      {tab === 'tracker' && (
+        <div className="space-y-4">
+          <div className="flex gap-3 flex-wrap items-end">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">From</label>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">To</label>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <button onClick={fetchExpenses} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm">Apply</button>
+          </div>
+
+          {expenses.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex justify-between items-center">
+              <span className="text-sm text-blue-700">{expenses.length} expense{expenses.length !== 1 ? 's' : ''} found</span>
+              <span className="font-bold text-blue-900">Total: ₹{totalExpenses.toFixed(2)}</span>
+            </div>
+          )}
+
+          {trackLoading ? (
+            <div className="text-center py-12 text-gray-400">Loading...</div>
+          ) : (
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    {['Date','Category','Description','Qty','Amount','Method','Paid To','Bill'].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {expenses.map(exp => (
+                    <tr key={exp.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{formatDate(exp.expenseDate)}</td>
+                      <td className="px-4 py-3"><span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs">{exp.category}</span></td>
+                      <td className="px-4 py-3 text-gray-900">{exp.description}</td>
+                      <td className="px-4 py-3 text-gray-500">{exp.quantity ? `${exp.quantity} ${exp.unit || ''}` : '—'}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-900">₹{exp.amount.toFixed(2)}</td>
+                      <td className="px-4 py-3"><span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">{exp.method}</span></td>
+                      <td className="px-4 py-3 text-gray-500">{exp.paidTo}</td>
+                      <td className="px-4 py-3">
+                        {exp.billUrl
+                          ? <button onClick={() => setBillPreview(exp.billUrl)} className="text-blue-600 underline text-xs hover:text-blue-800">View Bill</button>
+                          : <span className="text-gray-400 text-xs">—</span>
+                        }
+                      </td>
+                    </tr>
+                  ))}
+                  {expenses.length === 0 && (
+                    <tr><td colSpan={8} className="text-center py-10 text-gray-400">No expenses found for selected period</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Add Expense ───────────────────────────────────────────────── */}
+      {tab === 'add' && (
+        <div className="flex gap-6 items-start">
+          {/* ── Main Form ─────────────────────────────────────── */}
+          <div className="flex-1 min-w-0">
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-5">
+            <h2 className="font-semibold text-gray-900">New Expense Entry</h2>
+
+            {/* Date */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Date *</label>
+              <input type="date" value={form.expenseDate} onChange={e => setForm(f=>({...f,expenseDate:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
             </div>
 
-            {activeTab === 'tracker' && (
-                <div className='space-y-6'>
-                    <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6'>
-                        <Card  className='text-center'>
-                            <p className="text-gray-600">Total revenue</p>
-                            <h2 className="text-2xl font-bold text-blue-600">₹450000</h2>
-                        </Card>
-                        <Card  className='text-center'>
-                            <p className="text-gray-600">Total expenses</p>
-                            <h2 className="text-2xl font-bold text-blue-600">₹{totalAmount}</h2>
-                        </Card>
-                        <Card  className='text-center'>
-                            <p className="text-gray-600">Net profit</p>
-                            <h2 className="text-2xl font-bold text-blue-600">₹{450000 - totalAmount}</h2>
-                        </Card>
-                        <Card  className='text-center'>
-                            <p className="text-gray-600">Total orders</p>
-                            <h2 className="text-2xl font-bold text-blue-600">45</h2>
-                        </Card>
-                    </div>
+            {/* Category */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+              <select value={form.categoryId} onChange={e => setForm(f=>({...f,categoryId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <option value="">— Select Category —</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.isStockAffecting ? ' 📦' : ''}</option>)}
+              </select>
+              {selectedCategory?.isStockAffecting && (
+                <p className="text-xs text-blue-600 mt-1 flex items-center gap-1">📦 Stock-affecting category — will update inventory automatically</p>
+              )}
+            </div>
 
-                    <div className="space-y-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end mb-4">
+            {/* Expense Name */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Expense Name *</label>
+              <select value={form.expenseNameId} onChange={e => setForm(f=>({...f,expenseNameId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" disabled={!form.categoryId}>
+                <option value="">— Select Name —</option>
+                {filteredNames.map(n => <option key={n.id} value={n.id}>{n.name}{n.inventoryItem ? ` → ${n.inventoryItem.itemName}` : ''}</option>)}
+              </select>
+              {form.categoryId && filteredNames.length === 0 && (
+                <p className="text-xs text-orange-500 mt-1">No names under this category. Add them in Masters tab.</p>
+              )}
+            </div>
 
-                            <input
-                                type="text"
-                                placeholder="Search by category, description, or payment method"
-                                className="border border-black px-3 py-2 rounded w-full sm:w-80 mt-2 sm:mt-0"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                        </div>
-                        <div className='pb-5'>
-                            <Card title='Expense Tracker'>
-                                {loading ? (
-                                    <div className="flex justify-center items-center text-center py-4"><Loader /></div>
-                                ) : (
-                                    <Table
-                                        headers={['Category', 'Description', 'Amount', 'Date', 'Payment Method']}
-                                        data={expensehistory}
-                                    />
-                                )}
-                            </Card>
-                        </div>
-                    </div>
+            {/* Qty + Unit (stock categories only) */}
+            {selectedCategory?.isStockAffecting && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity *</label>
+                  <input type="number" value={form.quantity} onChange={e => setForm(f=>({...f,quantity:e.target.value}))} min="0.001" step="0.001" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="e.g. 10" />
                 </div>
-            )
-            }
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input value={form.unit} onChange={e => setForm(f=>({...f,unit:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="kg / pieces / ml..." />
+                </div>
+              </div>
+            )}
 
-            {
-                activeTab === 'add' && (
-                    <Card title="Add New Expense">
-                        <form className="space-y-4" onSubmit={handleSubmit}>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-3">Date</label>
-                                    <input
-                                        type="date"
-                                        name="expenseDate"
-                                        value={formData.expenseDate}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-3">Category</label>
-                                    <select
-                                        name="category"
-                                        value={formData.category}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2"
-                                        required
-                                    >
-                                        <option value="">Select Category</option>
-                                        <option value="Food">Food</option>
-                                        <option value="Transport">Transport</option>
-                                        <option value="Utilities">Utilities</option>
-                                        <option value="Shopping">Shopping</option>
-                                        <option value="Entertainment">Entertainment</option>
-                                        <option value="Health">Health</option>
-                                        <option value="Maintenance">Maintenance</option>
-                                        <option value="Staff Salary">Staff Salary</option>
-                                        <option value="Miscellaneous">Miscellaneous</option>
-                                    </select>
-                                </div>
-                            </div>
+            {/* Unit Price → Total */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{selectedCategory?.isStockAffecting ? 'Price per Unit (₹) *' : 'Amount (₹) *'}</label>
+                <input type="number" value={form.unitPrice} onChange={e => setForm(f=>({...f,unitPrice:e.target.value}))} min="0" step="0.01" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="0.00" />
+              </div>
+              {selectedCategory?.isStockAffecting && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount</label>
+                  <div className="border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm font-semibold text-gray-900">
+                    {totalAmount ? `₹ ${totalAmount}` : '—'}
+                  </div>
+                </div>
+              )}
+            </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-3">Expense Description</label>
-                                <textarea
-                                    name="description"
-                                    value={formData.description}
-                                    onChange={handleChange}
-                                    className="w-full border rounded px-3 py-2"
-                                    rows="2"
-                                    placeholder="Enter description"
-                                    required
-                                />
-                            </div>
+            {/* Payment & Vendor */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method *</label>
+                <select value={form.method} onChange={e => setForm(f=>({...f,method:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                  {PAYMENT_METHODS.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Vendor / Paid To
+                  <button type="button" onClick={() => setVendorPanel(v => !v)} className="ml-2 text-xs text-blue-600 underline">{vendorPanel ? 'Hide list' : 'Pick from list'}</button>
+                </label>
+                <input list="vendors-list" value={form.vendorName} onChange={e => setForm(f=>({...f,vendorName:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="Type or pick vendor..." />
+                <datalist id="vendors-list">
+                  {vendors.map(v => <option key={v.id} value={v.name} />)}
+                </datalist>
+              </div>
+            </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-3">Amount</label>
-                                    <input
-                                        type="number"
-                                        name="amount"
-                                        value={formData.amount}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2"
-                                        min="0"
-                                        step="0.01"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-3">Payment Method</label>
-                                    <select
-                                        name="method"
-                                        value={formData.method}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2"
-                                        required
-                                    >
-                                        <option value="">Select Method</option>
-                                        <option value="CASH">Cash</option>
-                                        <option value="CARD">Card</option>
-                                        <option value="UPI">UPI</option>
-                                        <option value="WALLET">Wallet</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-3">Paid To</label>
-                                    <input
-                                        type="text"
-                                        name="paidTo"
-                                        value={formData.paidTo}
-                                        onChange={handleChange}
-                                        className="w-full border rounded px-3 py-2"
-                                        placeholder="Enter recipient"
-                                        required
-                                    />
-                                </div>
-                            </div>
+            {/* Bill Image Upload */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Bill Image <span className="text-gray-400 font-normal">(optional)</span></label>
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-3 text-center">
+                {billImage ? (
+                  <div className="flex items-center gap-3">
+                    <img src={URL.createObjectURL(billImage)} alt="bill" className="w-12 h-12 object-cover rounded" />
+                    <div className="text-left flex-1">
+                      <p className="text-sm text-gray-700 font-medium truncate">{billImage.name}</p>
+                      <p className="text-xs text-gray-400">{(billImage.size / 1024).toFixed(1)} KB</p>
+                    </div>
+                    <button onClick={() => setBillImage(null)} className="text-red-500 hover:text-red-700 text-xs">Remove</button>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer">
+                    <span className="text-2xl">🧾</span>
+                    <p className="text-sm text-gray-500 mt-1">Click to attach bill image or PDF</p>
+                    <p className="text-xs text-gray-400">Max 5MB</p>
+                    <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => setBillImage(e.target.files[0] || null)} />
+                  </label>
+                )}
+              </div>
+            </div>
 
-                            <div className="flex justify-end space-x-2 pt-2">
-                                <Button type="button" variant="danger" onClick={handleReset}>Reset</Button>
-                                <Button type="submit" variant="success" disabled={loading}>
-                                    {loading ? 'Adding...' : 'Add Expense'}
-                                </Button>
-                            </div>
-                        </form>
-                    </Card>
-                )
-            }
-        </div >
-    )
-};
+            {/* Submit */}
+            <button onClick={submitExpense} disabled={addLoading} className="w-full bg-gray-900 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors disabled:opacity-50">
+              {addLoading ? 'Saving...' : '+ Add Expense'}
+            </button>
+          </div>
+          </div>
 
-export default Expenditure;
+          {/* ── Vendor Side Panel ─────────────────────────────── */}
+          {vendorPanel && (
+            <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-2xl p-4 shadow-sm sticky top-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="font-semibold text-gray-900 text-sm">Vendors</h3>
+                <button onClick={() => setVendorPanel(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+              </div>
+              {vendors.length === 0 ? (
+                <p className="text-xs text-gray-400">No vendors yet. Add them in Masters tab.</p>
+              ) : (
+                <div className="space-y-1 max-h-96 overflow-y-auto">
+                  {vendors.map(v => (
+                    <button key={v.id}
+                      onClick={() => { setForm(f => ({...f, vendorName: v.name})); setVendorPanel(false) }}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                        form.vendorName === v.name ? 'bg-gray-900 text-white' : 'hover:bg-gray-50 text-gray-700'
+                      }`}>
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Masters ───────────────────────────────────────────────────── */}
+      {tab === 'masters' && (
+        <div className="space-y-4">
+          {/* Masters Sub-tabs */}
+          <div className="flex gap-2">
+            {[['category','Categories'],['name','Expense Names'],['vendor','Vendors']].map(([key,label]) => (
+              <button key={key} onClick={() => setMasterTab(key)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${masterTab === key ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Category Master */}
+          {masterTab === 'category' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                <h3 className="font-semibold text-gray-900">Add Category</h3>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Category Name *</label>
+                  <input value={catForm.name} onChange={e => setCatForm(f=>({...f,name:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="e.g. Groceries, Utilities..." />
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={catForm.isStockAffecting} onChange={e => setCatForm(f=>({...f,isStockAffecting:e.target.checked}))} className="w-4 h-4 accent-gray-900" />
+                  <span className="text-sm text-gray-700">Stock-affecting category <span className="text-gray-400">(triggers inventory inward)</span></span>
+                </label>
+                <button onClick={addCategory} disabled={masterLoading} className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
+                  {masterLoading ? 'Adding...' : 'Add Category'}
+                </button>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Type</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {categories.map(c => (
+                      <tr key={c.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{c.name}</td>
+                        <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs ${c.isStockAffecting ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{c.isStockAffecting ? '📦 Stock' : 'Non-stock'}</span></td>
+                        <td className="px-4 py-3 text-right"><button onClick={() => deleteCategory(c.id)} className="text-red-500 text-xs hover:text-red-700">Delete</button></td>
+                      </tr>
+                    ))}
+                    {categories.length === 0 && <tr><td colSpan={3} className="text-center py-6 text-gray-400">No categories yet</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Expense Name Master */}
+          {masterTab === 'name' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                <h3 className="font-semibold text-gray-900">Add Expense Name</h3>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Category *</label>
+                  <select value={nameForm.categoryId} onChange={e => setNameForm(f=>({...f,categoryId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                    <option value="">— Select Category —</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Name *</label>
+                  <input value={nameForm.name} onChange={e => setNameForm(f=>({...f,name:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="e.g. Onion Purchase, LPG Cylinder..." />
+                </div>
+                {nameForm.categoryId && categories.find(c => c.id === parseInt(nameForm.categoryId))?.isStockAffecting && (
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-1">Link to Inventory Item</label>
+                    <select value={nameForm.linkedInventoryItemId} onChange={e => setNameForm(f=>({...f,linkedInventoryItemId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                      <option value="">— None —</option>
+                      {inventoryItems.map(i => <option key={i.id} value={i.id}>{i.itemName} ({i.stockUnit})</option>)}
+                    </select>
+                  </div>
+                )}
+                <button onClick={addExpenseName} disabled={masterLoading} className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
+                  {masterLoading ? 'Adding...' : 'Add Name'}
+                </button>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Category</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Linked Item</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {expenseNames.map(n => (
+                      <tr key={n.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{n.name}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{n.category?.name}</td>
+                        <td className="px-4 py-3 text-xs">{n.inventoryItem ? <span className="text-blue-600">{n.inventoryItem.itemName}</span> : <span className="text-gray-400">—</span>}</td>
+                        <td className="px-4 py-3 text-right"><button onClick={() => deleteExpenseName(n.id)} className="text-red-500 text-xs hover:text-red-700">Delete</button></td>
+                      </tr>
+                    ))}
+                    {expenseNames.length === 0 && <tr><td colSpan={4} className="text-center py-6 text-gray-400">No expense names yet</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Vendor Master */}
+          {masterTab === 'vendor' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+                <h3 className="font-semibold text-gray-900">Add Vendor</h3>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">Vendor Name *</label>
+                  <input value={vendorForm.name} onChange={e => setVendorForm(f=>({...f,name:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="e.g. Sri Ram Traders..." />
+                </div>
+                <button onClick={addVendor} disabled={masterLoading} className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
+                  {masterLoading ? 'Adding...' : 'Add Vendor'}
+                </button>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Vendor Name</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {vendors.map(v => (
+                      <tr key={v.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{v.name}</td>
+                        <td className="px-4 py-3 text-right"><button onClick={() => deleteVendor(v.id)} className="text-red-500 text-xs hover:text-red-700">Delete</button></td>
+                      </tr>
+                    ))}
+                    {vendors.length === 0 && <tr><td colSpan={2} className="text-center py-6 text-gray-400">No vendors yet</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Bill Preview Modal ──────────────────────────────────────────────── */}
+      {billPreview && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setBillPreview(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center px-5 py-4 border-b">
+              <h2 className="font-semibold text-gray-900">Bill Image</h2>
+              <div className="flex items-center gap-3">
+                <a href={billPreview} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline">Open in new tab</a>
+                <button onClick={() => setBillPreview(null)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+              </div>
+            </div>
+            <div className="p-4 overflow-auto max-h-[75vh]">
+              {billPreview.toLowerCase().endsWith('.pdf')
+                ? <iframe src={billPreview} className="w-full h-[60vh] rounded" title="Bill PDF" />
+                : <img src={billPreview} alt="Bill" className="w-full rounded object-contain" />
+              }
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
