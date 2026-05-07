@@ -101,7 +101,7 @@ const SignIn = () => {
         <div 
             className="min-h-screen w-full flex items-center justify-center p-4"
             style={{
-                backgroundImage: `url('https://mrkadalai-files.s3.ap-south-1.amazonaws.com/adbg.jpg')`,
+                backgroundImage: `url('https://ezjbzdcdqvarkkbteptl.supabase.co/storage/v1/object/public/images/adbg.jpeg')`,
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
                 backgroundRepeat: 'no-repeat'
@@ -109,7 +109,8 @@ const SignIn = () => {
         >
             <div className="bg-white p-8 sm:p-12 rounded-2xl shadow-xl w-full max-w-md">
                 <div className="text-center">
-                    <img src="https://mrkadalai-files.s3.ap-south-1.amazonaws.com/logo2.jpg" alt="Logo" className="mx-auto h-20 w-auto mb-4" />
+                    <img src="https://ezjbzdcdqvarkkbteptl.supabase.co/storage/v1/object/public/images/logo2.jpeg
+" alt="Logo" className="mx-auto h-20 w-auto mb-4" />
                     <h2 className="text-3xl font-bold text-gray-900 mb-2">
                         Admin Portal
                     </h2>
