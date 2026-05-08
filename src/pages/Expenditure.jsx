@@ -9,6 +9,64 @@ const weekAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return
 
 const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
+const SearchableSelect = ({ options, value, onChange, placeholder, disabled, emptyMessage }) => {
+  const [searchTerm, setSearchTerm] = useState('')
+  const [isOpen, setIsOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+
+  const selectedOption = options.find(o => o.id === parseInt(value))
+  
+  useEffect(() => {
+    if (selectedOption) setSearchTerm(selectedOption.name)
+    else setSearchTerm('')
+  }, [value, options])
+
+  const filtered = options.filter(o => 
+    o.name.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const handleSelect = (option) => {
+    onChange(option.id)
+    setSearchTerm(option.name)
+    setIsOpen(false)
+  }
+
+  return (
+    <div className="relative">
+      <input
+        type="text"
+        disabled={disabled}
+        placeholder={placeholder}
+        value={searchTerm}
+        onChange={(e) => {
+          setSearchTerm(e.target.value)
+          if (!isOpen) setIsOpen(true)
+        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:bg-gray-50 disabled:text-gray-400"
+      />
+      {isOpen && !disabled && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {filtered.length > 0 ? (
+            filtered.map((opt, idx) => (
+              <div
+                key={opt.id}
+                onClick={() => handleSelect(opt)}
+                className={`px-4 py-2 text-sm cursor-pointer hover:bg-gray-100 ${parseInt(value) === opt.id ? 'bg-gray-50 font-semibold' : ''}`}
+              >
+                {opt.name} {opt.inventoryItem ? `(Inv: ${opt.inventoryItem.itemName})` : ''}
+              </div>
+            ))
+          ) : (
+            <div className="px-4 py-2 text-sm text-gray-400">{emptyMessage || 'No matches found'}</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Expenditure() {
   const outletId = parseInt(localStorage.getItem('outletId'))
   const [tab, setTab] = useState('tracker') // tracker | add | masters
@@ -299,10 +357,14 @@ export default function Expenditure() {
             {/* Expense Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Expense Name *</label>
-              <select value={form.expenseNameId} onChange={e => setForm(f=>({...f,expenseNameId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" disabled={!form.categoryId}>
-                <option value="">— Select Name —</option>
-                {filteredNames.map(n => <option key={n.id} value={n.id}>{n.name}{n.inventoryItem ? ` → ${n.inventoryItem.itemName}` : ''}</option>)}
-              </select>
+              <SearchableSelect 
+                options={filteredNames}
+                value={form.expenseNameId}
+                onChange={(id) => setForm(f => ({ ...f, expenseNameId: id }))}
+                placeholder={!form.categoryId ? "Select category first..." : "Type to search item (e.g. Onion, Oil)..."}
+                disabled={!form.categoryId}
+                emptyMessage={form.categoryId ? "No names found. Add them in Masters." : "Select category first."}
+              />
               {form.categoryId && filteredNames.length === 0 && (
                 <p className="text-xs text-orange-500 mt-1">No names under this category. Add them in Masters tab.</p>
               )}
@@ -489,10 +551,12 @@ export default function Expenditure() {
                 {nameForm.categoryId && categories.find(c => c.id === parseInt(nameForm.categoryId))?.isStockAffecting && (
                   <div>
                     <label className="block text-sm text-gray-600 mb-1">Link to Inventory Item</label>
-                    <select value={nameForm.linkedInventoryItemId} onChange={e => setNameForm(f=>({...f,linkedInventoryItemId:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                      <option value="">— None —</option>
-                      {inventoryItems.map(i => <option key={i.id} value={i.id}>{i.itemName} ({i.stockUnit})</option>)}
-                    </select>
+                    <SearchableSelect 
+                      options={inventoryItems.map(i => ({ id: i.id, name: `${i.itemName} (${i.stockUnit})` }))}
+                      value={nameForm.linkedInventoryItemId}
+                      onChange={(id) => setNameForm(f => ({ ...f, linkedInventoryItemId: id }))}
+                      placeholder="Search inventory item..."
+                    />
                   </div>
                 )}
                 <button onClick={addExpenseName} disabled={masterLoading} className="w-full bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
