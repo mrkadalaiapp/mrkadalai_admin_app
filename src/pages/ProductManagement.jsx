@@ -45,6 +45,7 @@ const ProductManagement = () => {
     const [recipeRows, setRecipeRows] = useState([{ inventoryItemId: '', itemType: 'RAW_MATERIAL', quantityPerServing: '' }]);
     const [editRecipeRows, setEditRecipeRows] = useState([]);
     const [recipeLoading, setRecipeLoading] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const ITEM_TYPES = ['RAW_MATERIAL', 'SERVING_ITEM', 'PACKAGING_ITEM'];
 
     // Image file states
@@ -163,6 +164,7 @@ const ProductManagement = () => {
             return;
         }
         try {
+            setSubmitting(true);
             const productFormData = new FormData();
             productFormData.append('name', formData.name);
             productFormData.append('description', formData.description);
@@ -195,6 +197,7 @@ const ProductManagement = () => {
             toast.error(err.message || 'Failed to add product');
         } finally {
             setRecipeLoading(false);
+            setSubmitting(false);
         }
     };
 
@@ -207,6 +210,7 @@ const ProductManagement = () => {
             return;
         }
         try {
+            setSubmitting(true);
             const productFormData = new FormData();
             productFormData.append('name', editFormData.name);
             productFormData.append('description', editFormData.description);
@@ -239,6 +243,7 @@ const ProductManagement = () => {
             toast.error(err.message || 'Failed to update product');
         } finally {
             setRecipeLoading(false);
+            setSubmitting(false);
         }
     };
 
@@ -367,7 +372,7 @@ const ProductManagement = () => {
                             <div className="col-span-3">
                                 <div className="flex items-center gap-1">
                                     <input type="number" value={row.quantityPerServing} onChange={e => updateRecipeRow(idx, 'quantityPerServing', e.target.value, isEdit)}
-                                        placeholder="Qty" min="0.001" step="0.001"
+                                        placeholder="Qty" step="any"
                                         className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none" />
                                     <span className="text-xs text-gray-400 whitespace-nowrap">{selectedItem?.stockUnit || ''}</span>
                                 </div>
@@ -546,8 +551,9 @@ const ProductManagement = () => {
                         <Button
                             variant="success"
                             onClick={handleAddProduct}
+                            disabled={submitting}
                         >
-                            Add Product
+                            {submitting ? <><Loader size="xs" className="mr-2" /> Adding...</> : 'Add Product'}
                         </Button>
                     </div>
                 }
@@ -695,8 +701,9 @@ const ProductManagement = () => {
                         <Button
                             variant="success"
                             onClick={handleEditProduct}
+                            disabled={submitting}
                         >
-                            Update Product
+                            {submitting ? <><Loader size="xs" className="mr-2" /> Updating...</> : 'Update Product'}
                         </Button>
                     </div>
                 }
