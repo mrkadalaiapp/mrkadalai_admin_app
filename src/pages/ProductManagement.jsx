@@ -371,8 +371,17 @@ const ProductManagement = () => {
                             </div>
                             <div className="col-span-3">
                                 <div className="flex items-center gap-1">
-                                    <input type="number" value={row.quantityPerServing} onChange={e => updateRecipeRow(idx, 'quantityPerServing', e.target.value, isEdit)}
-                                        placeholder="Qty" step="any"
+                                    <input 
+                                        type="text" 
+                                        inputMode="decimal"
+                                        value={row.quantityPerServing} 
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === '' || /^[0-9]*\.?[0-9]*$/.test(val)) {
+                                                updateRecipeRow(idx, 'quantityPerServing', val, isEdit)
+                                            }
+                                        }}
+                                        placeholder="0.00" 
                                         className="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none" />
                                     <span className="text-xs text-gray-400 whitespace-nowrap">{selectedItem?.stockUnit || ''}</span>
                                 </div>
