@@ -74,6 +74,8 @@ export default function Inventory() {
 
   // ── Master filters
   const [masterSearch, setMasterSearch] = useState('')
+  const [masterSelectedItems, setMasterSelectedItems] = useState([])
+  const [showItemsMaster, setShowItemsMaster] = useState(false)
 
   // ── History filters
   const [dateFrom, setDateFrom] = useState(weekAgo())
@@ -216,9 +218,11 @@ export default function Inventory() {
     return matchCat && matchStatus && matchSearch
   })
 
-  const masterFiltered = items.filter(i => 
-    i.itemName.toLowerCase().includes(masterSearch.toLowerCase())
-  )
+  const masterFiltered = items.filter(i => {
+    const matchSearch = i.itemName.toLowerCase().includes(masterSearch.toLowerCase())
+    const matchSelected = masterSelectedItems.length === 0 || masterSelectedItems.some(s => s.id === i.id)
+    return matchSearch && matchSelected
+  })
 
   const counts = { HEALTHY:0, LOW_STOCK:0, OUT_OF_STOCK:0 }
   items.forEach(i => { if (counts[i.stockStatus] !== undefined) counts[i.stockStatus]++ })
@@ -294,7 +298,7 @@ export default function Inventory() {
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-60 overflow-y-auto">
-              {searchVal ? (
+              {suggestions.length > 0 ? (
                 suggestions.map(s => (
                   <button key={s.id} onClick={() => { setSelected([...selected, s]); setSearchVal(''); setShow(false) }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex justify-between border-b last:border-0 border-gray-50">
                     <span className="font-medium text-gray-700">{s.itemName}</span>
@@ -302,7 +306,7 @@ export default function Inventory() {
                   </button>
                 ))
               ) : (
-                <div className="p-3 text-center text-xs text-gray-400 italic">Type to search items...</div>
+                <div className="p-3 text-center text-xs text-gray-400 italic">No items found</div>
               )}
             </div>
           </>
@@ -448,16 +452,13 @@ export default function Inventory() {
         <div className="space-y-4">
           <div className="flex gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
             <Autocomplete 
-              label="Search Master Items" 
-              selected={histItems} // Reuse histItems or create a new state? 
-              // Actually, Item Master filtering is usually local. 
-              // The user asked for "autoselect dropdown".
-              // Let's use a simpler version or just the Autocomplete for consistency.
-              setSelected={setHistItems} 
+              label="Search & Filter Items" 
+              selected={masterSelectedItems} 
+              setSelected={setMasterSelectedItems} 
               searchVal={masterSearch} 
               setSearchVal={setMasterSearch} 
-              show={showItemsHist} 
-              setShow={setShowItemsHist} 
+              show={showItemsMaster} 
+              setShow={setShowItemsMaster} 
             />
           </div>
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
