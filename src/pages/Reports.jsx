@@ -10,6 +10,7 @@ import Loader from '../components/ui/Loader'
 const Reports = () => {
     const [searchText, setSearchText] = useState('')
     const [activeTab, setActiveTab] = useState('sales')
+    const [salesMetric, setSalesMetric] = useState('totalOrders') // totalOrders | totalItemsSold
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
 
@@ -273,8 +274,51 @@ const Reports = () => {
         setSearchText('')
     }
 
+    const downloadCSV = (data, filename, headers) => {
+        if (!data || data.length === 0) return alert('No data to download')
+        
+        const csvContent = [
+            headers.join(','),
+            ...data.map(row => 
+                headers.map(header => {
+                    const val = row[header] === undefined || row[header] === null ? '' : row[header]
+                    // Escape quotes and wrap in quotes if contains comma
+                    const stringVal = String(val).replace(/"/g, '""')
+                    return stringVal.includes(',') ? `"${stringVal}"` : stringVal
+                }).join(',')
+            )
+        ].join('\n')
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const link = document.createElement('a')
+        const url = URL.createObjectURL(blob)
+        link.setAttribute('href', url)
+        link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`)
+        link.style.visibility = 'hidden'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+    }
+
     const handleDownloadReport = () => {
-        console.log('Download report for:', activeTab)
+        if (activeTab === 'sales') {
+            const data = getFilteredData(salesReportData, ['productName'])
+            downloadCSV(data, 'Sales_Report', ['productName', 'totalOrders', 'totalItemsSold'])
+        } else if (activeTab === 'revenue') {
+            const data = getFilteredData(revenueByItemsData, ['productName'])
+            downloadCSV(data, 'Revenue_Analytics_Report', ['productName', 'revenue'])
+        } else if (activeTab === 'profit') {
+            // Profit Loss Trends data mapping for CSV
+            const csvData = profitLossTrendsData.map(item => ({
+                ...item,
+                monthName: getMonthName(item.month),
+                profitValue: item.profit.toFixed(2)
+            }))
+            downloadCSV(csvData, 'Profit_Loss_Report', ['monthName', 'sales', 'recharges', 'expenses', 'profitValue'])
+        } else if (activeTab === 'customer') {
+            const data = getFilteredData(customerPerOrderData, ['date'])
+            downloadCSV(data, 'Customer_Trends_Report', ['date', 'customersPerOrder'])
+        }
     }
 
     const handleDateRangeChange = (field, value) => {
@@ -297,13 +341,19 @@ const Reports = () => {
     }
 
     // Custom tooltip for bar charts
-    const CustomTooltip = ({ active, payload, label }) => {
+    const CustomTooltip = ({ active, payload, label, metric }) => {
         if (active && payload && payload.length) {
+            const dataKey = payload[0].dataKey;
+            let labelText = 'Value';
+            if (dataKey === 'totalOrders') labelText = 'Orders';
+            else if (dataKey === 'totalItemsSold') labelText = 'Items Sold';
+            else if (dataKey === 'revenue') labelText = 'Revenue';
+
             return (
                 <div className="bg-white p-3 border border-gray-300 rounded shadow-lg">
                     <p className="font-semibold">{label}</p>
                     <p className="text-blue-600">
-                        {payload[0].dataKey === 'totalOrders' ? 'Orders' : 'Revenue'}: {payload[0].dataKey === 'revenue' ? formatCurrency(payload[0].value) : payload[0].value}
+                        {labelText}: {dataKey === 'revenue' ? formatCurrency(payload[0].value) : payload[0].value}
                     </p>
                 </div>
             )
@@ -475,8 +525,26 @@ const Reports = () => {
                         </div>
                     </div>
 
-                    {/* Sales Chart */}
-                    <Card title="Sales Report - Products vs Number of Orders">
+                    {/* Sales Chart Header */}
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold text-gray-800">Sales Report - {salesMetric === 'totalOrders' ? 'Number of Orders' : 'Total Items Sold'}</h2>
+                        <div className="flex bg-gray-100 p-1 rounded-lg">
+                            <button 
+                                onClick={() => setSalesMetric('totalOrders')}
+                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${salesMetric === 'totalOrders' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Order Count
+                            </button>
+                            <button 
+                                onClick={() => setSalesMetric('totalItemsSold')}
+                                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${salesMetric === 'totalItemsSold' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                Items Sold
+                            </button>
+                        </div>
+                    </div>
+
+                    <Card>
                         {salesReportData && salesReportData.length > 0 ? (
                             <div className="h-96 w-full">
                                 <ResponsiveContainer width="100%" height="100%">
@@ -499,10 +567,10 @@ const Reports = () => {
                                             tick={{ fontSize: 12 }}
                                             label={{ value: 'Number of Orders', angle: -90, position: 'insideLeft' }}
                                         />
-                                        <Tooltip content={<CustomTooltip />} />
+                                        <Tooltip content={<CustomTooltip metric={salesMetric} />} />
                                         <Bar
-                                            dataKey="totalOrders"
-                                            fill="#3b82f6"
+                                            dataKey={salesMetric}
+                                            fill={salesMetric === 'totalOrders' ? '#3b82f6' : '#10b981'}
                                             radius={[4, 4, 0, 0]}
                                         />
                                     </BarChart>

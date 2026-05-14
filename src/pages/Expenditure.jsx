@@ -378,8 +378,18 @@ export default function Expenditure() {
                   <input type="number" value={form.quantity} onChange={e => setForm(f=>({...f,quantity:e.target.value}))} min="0.001" step="0.001" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="e.g. 10" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <input value={form.unit} onChange={e => setForm(f=>({...f,unit:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" placeholder="kg / pieces / ml..." />
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit *</label>
+                  <select value={form.unit} onChange={e => setForm(f=>({...f,unit:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 bg-white">
+                    <option value="">Select Unit</option>
+                    <option value="kg">kg</option>
+                    <option value="g">g</option>
+                    <option value="litre">litre</option>
+                    <option value="ml">ml</option>
+                    <option value="pieces">pieces</option>
+                    <option value="packets">packets</option>
+                    <option value="bottles">bottles</option>
+                    <option value="boxes">boxes</option>
+                  </select>
                 </div>
               </div>
             )}

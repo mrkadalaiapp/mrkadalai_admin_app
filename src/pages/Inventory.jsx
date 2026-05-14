@@ -32,7 +32,6 @@ const exportCSV = (rows, columns, filename) => {
   const header = columns.map(c => c.label).join(',')
   const body   = rows.map(r => columns.map(c => {
     const val = c.get(r)
-    // Wrap in quotes and escape internal quotes
     return `"${String(val ?? '').replace(/"/g, '""')}"`
   }).join(','))
   const csv  = [header, ...body].join('\n')
@@ -55,11 +54,8 @@ const HISTORY_COLS = [
   { label: 'Remarks',       get: r => r.remarks || '' },
 ]
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function Inventory() {
   const outletId = parseInt(localStorage.getItem('outletId'))
-  // tabs: stock | master | history | today
   const [tab, setTab] = useState('stock')
 
   const [items,       setItems]       = useState([])
@@ -69,25 +65,27 @@ export default function Inventory() {
   const [histLoading, setHistLoading] = useState(false)
   const [todayLoading,setTodayLoading]= useState(false)
 
-  // Dynamic categories
   const [categories, setCategories] = useState([])
 
   // ── Current Stock filters
   const [search,     setSearch]    = useState('')
   const [catFilter,  setCatFilter] = useState('All')
-  const [statusFilter,setStatusFilter] = useState('All')  // NEW
+  const [statusFilter,setStatusFilter] = useState('All')
+
+  // ── Master filters
+  const [masterSearch, setMasterSearch] = useState('')
 
   // ── History filters
   const [dateFrom, setDateFrom] = useState(weekAgo())
   const [dateTo,   setDateTo]   = useState(today())
-  const [srcFilter, setSrcFilter] = useState('All')
-  const [histItem,  setHistItem]  = useState('')
-  const [histMove,  setHistMove]  = useState('All')       // NEW
+  const [histSources, setHistSources] = useState([])
+  const [histItems,   setHistItems]   = useState([])
+  const [histMove,    setHistMove]    = useState('All')
 
   // ── Today filters
-  const [todayItem,     setTodayItem]     = useState('')
-  const [todayMove,     setTodayMove]     = useState('All')
-  const [todaySrc,      setTodaySrc]      = useState('All')
+  const [todayItems,     setTodayItems]     = useState([])
+  const [todayMove,      setTodayMove]      = useState('All')
+  const [todaySources,   setTodaySources]   = useState([])
 
   // Adjustment modal
   const [adjModal,   setAdjModal]   = useState(false)
@@ -130,8 +128,8 @@ export default function Inventory() {
         outletId,
         startDate: dateFrom,
         endDate:   dateTo,
-        ...(srcFilter !== 'All' ? { source: srcFilter } : {}),
-        ...(histItem ? { inventoryItemId: parseInt(histItem) } : {}),
+        ...(histSources.length > 0 ? { source: histSources } : {}),
+        ...(histItems.length > 0 ? { inventoryItemId: histItems.map(i => i.id) } : {}),
       }
       const res = await apiRequest('/superadmin/outlets/inventory-items/history', { method:'POST', body:payload })
       setHistory(res.history || [])
@@ -146,8 +144,8 @@ export default function Inventory() {
         outletId,
         startDate: today(),
         endDate:   today(),
-        ...(todayItem ? { inventoryItemId: parseInt(todayItem) } : {}),
-        ...(todaySrc !== 'All' ? { source: todaySrc } : {}),
+        ...(todayItems.length > 0 ? { inventoryItemId: todayItems.map(i => i.id) } : {}),
+        ...(todaySources.length > 0 ? { source: todaySources } : {}),
       }
       const res = await apiRequest('/superadmin/outlets/inventory-items/history', { method:'POST', body:payload })
       setTodayHist(res.history || [])
@@ -155,14 +153,12 @@ export default function Inventory() {
     finally { setTodayLoading(false) }
   }
 
-  // Auto-load when tab switches to history / today
   const switchTab = (key) => {
     setTab(key)
     if (key === 'history') fetchHistory()
     if (key === 'today')   fetchTodayHistory()
   }
 
-  // ── Stock Adjustment ───────────────────────────────────────────────────────
   const openAdj = (item, mode) => {
     setAdjItem(item); setAdjMode(mode); setAdjQty(''); setAdjReason(''); setAdjModal(true)
   }
@@ -181,7 +177,6 @@ export default function Inventory() {
     finally { setAdjLoading(false) }
   }
 
-  // ── Item Master CRUD ───────────────────────────────────────────────────────
   const openAdd = () => {
     setEditingItem(null)
     setForm({ itemName:'', itemCategory: categories[0]?.name || '', stockUnit:'kg', reorderThreshold:'', costPerUnit:'' })
@@ -213,7 +208,7 @@ export default function Inventory() {
     catch { toast.error('Failed') }
   }
 
-  // ── Derived / filtered ────────────────────────────────────────────────────
+  // ── Filtering ─────────────────────────────────────────────────────────────
   const filtered = items.filter(i => {
     const matchCat    = catFilter    === 'All' || i.itemCategory === catFilter
     const matchStatus = statusFilter === 'All' || i.stockStatus  === statusFilter
@@ -221,16 +216,16 @@ export default function Inventory() {
     return matchCat && matchStatus && matchSearch
   })
 
+  const masterFiltered = items.filter(i => 
+    i.itemName.toLowerCase().includes(masterSearch.toLowerCase())
+  )
+
   const counts = { HEALTHY:0, LOW_STOCK:0, OUT_OF_STOCK:0 }
   items.forEach(i => { if (counts[i.stockStatus] !== undefined) counts[i.stockStatus]++ })
 
-  // History filtered by movement type (client-side)
   const filteredHistory = history.filter(r => histMove === 'All' || r.movementType === histMove)
-
-  // Today filtered by movement type (client-side)
   const filteredToday = todayHist.filter(r => todayMove === 'All' || r.movementType === todayMove)
 
-  // Today summary per item
   const todaySummary = filteredToday.reduce((acc, r) => {
     const name = r.inventoryItem?.itemName || 'Unknown'
     const unit = r.inventoryItem?.stockUnit || ''
@@ -243,7 +238,80 @@ export default function Inventory() {
   const totalIn  = filteredToday.filter(r => r.movementType === 'INWARD').reduce((s,r) => s + r.quantity, 0)
   const totalOut = filteredToday.filter(r => r.movementType === 'OUTWARD').reduce((s,r) => s + r.quantity, 0)
 
-  // ── Shared UI helpers ─────────────────────────────────────────────────────
+  // ── Autocomplete / Multi-select UI Helpers ───────────────────────────────
+  const [showSrcHist, setShowSrcHist] = useState(false)
+  const [showSrcToday, setShowSrcToday] = useState(false)
+  const [itemSearchHist, setItemSearchHist] = useState('')
+  const [itemSearchToday, setItemSearchToday] = useState('')
+  const [showItemsHist, setShowItemsHist] = useState(false)
+  const [showItemsToday, setShowItemsToday] = useState(false)
+
+  const MultiSelect = ({ label, selected, options, onToggle, show, setShow, onClear }) => (
+    <div className="relative">
+      <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
+      <button onClick={() => setShow(!show)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[160px] text-left bg-white flex justify-between items-center shadow-sm">
+        <span className="truncate">{selected.length === 0 ? `All ${label}` : `${selected.length} selected`}</span>
+        <span className="text-gray-400 text-[10px]">▼</span>
+      </button>
+      {show && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
+          <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-2 space-y-1">
+            {options.filter(o => o !== 'All').map(o => (
+              <label key={o} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-xs">
+                <input type="checkbox" checked={selected.includes(o)} onChange={() => onToggle(o)} className="rounded text-gray-900 focus:ring-gray-900 h-3.5 w-3.5" />
+                {o.replace(/_/g, ' ')}
+              </label>
+            ))}
+            <div className="border-t pt-1.5 mt-1 flex justify-between px-1">
+              <button onClick={onClear} className="text-[10px] text-blue-600 font-bold uppercase hover:underline">Clear</button>
+              <button onClick={() => setShow(false)} className="text-[10px] text-gray-600 font-bold uppercase hover:underline">Close</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+
+  const Autocomplete = ({ label, selected, setSelected, searchVal, setSearchVal, show, setShow }) => {
+    const suggestions = items.filter(i => 
+      i.itemName.toLowerCase().includes(searchVal.toLowerCase()) && 
+      !selected.find(s => s.id === i.id)
+    )
+    return (
+      <div className="relative flex-1 min-w-[240px]">
+        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
+        <div className="border border-gray-300 rounded-lg p-1 bg-white flex flex-wrap gap-1 min-h-[38px] items-center shadow-sm">
+          {selected.map(item => (
+            <span key={item.id} className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded flex items-center gap-1 text-[11px] font-medium border border-gray-200">
+              {item.itemName}
+              <button onClick={() => setSelected(selected.filter(i => i.id !== item.id))} className="hover:text-red-500 ml-0.5 text-[10px]">✕</button>
+            </span>
+          ))}
+          <input value={searchVal} onChange={e => setSearchVal(e.target.value)} onFocus={() => setShow(true)} placeholder={selected.length === 0 ? "Search & select items..." : ""} className="flex-1 outline-none px-2 py-1 text-sm bg-transparent min-w-[120px]" />
+        </div>
+        {show && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-60 overflow-y-auto">
+              {searchVal ? (
+                suggestions.map(s => (
+                  <button key={s.id} onClick={() => { setSelected([...selected, s]); setSearchVal(''); setShow(false) }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex justify-between border-b last:border-0 border-gray-50">
+                    <span className="font-medium text-gray-700">{s.itemName}</span>
+                    <span className="text-[10px] text-gray-400 uppercase font-bold">{s.itemCategory}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="p-3 text-center text-xs text-gray-400 italic">Type to search items...</div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+
+  // ── Tab Navigation Helpers ────────────────────────────────────────────────
   const TabBtn = ({ k, label }) => (
     <button onClick={() => switchTab(k)}
       className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
@@ -253,9 +321,8 @@ export default function Inventory() {
   )
 
   const ExportBtn = ({ rows, filename }) => (
-    <button
-      onClick={() => exportCSV(rows, HISTORY_COLS, filename)}
-      className="flex items-center gap-1.5 border border-green-600 text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors">
+    <button onClick={() => exportCSV(rows, HISTORY_COLS, filename)}
+      className="flex items-center gap-1.5 border border-green-600 text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
       ⬇ Export CSV
     </button>
   )
@@ -270,36 +337,29 @@ export default function Inventory() {
           <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
           <p className="text-sm text-gray-500 mt-0.5">Raw materials, packaging &amp; serving items</p>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors">
+        <button onClick={openAdd} className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-all shadow-sm active:scale-95">
           <span className="text-lg leading-none">+</span> Add Item
         </button>
       </div>
 
-      {/* Summary Cards — context-aware */}
+      {/* Summary Cards */}
       <div className="grid grid-cols-3 gap-4">
         {tab === 'today' ? (
-          // Today's Stock summary
           <>
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-              <p className="text-xs text-green-600 font-medium uppercase tracking-wide">Total IN Today</p>
-              <p className="text-2xl font-bold text-green-700 mt-1">{totalIn.toFixed(2)}</p>
-              <p className="text-xs text-green-500 mt-0.5">{filteredToday.filter(r => r.movementType==='INWARD').length} movements</p>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 shadow-sm">
+              <p className="text-[10px] text-green-600 font-bold uppercase tracking-widest">Total IN Today</p>
+              <p className="text-2xl font-black text-green-700 mt-1">{totalIn.toFixed(2)}</p>
             </div>
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="text-xs text-red-600 font-medium uppercase tracking-wide">Total OUT Today</p>
-              <p className="text-2xl font-bold text-red-700 mt-1">{totalOut.toFixed(2)}</p>
-              <p className="text-xs text-red-500 mt-0.5">{filteredToday.filter(r => r.movementType==='OUTWARD').length} movements</p>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm">
+              <p className="text-[10px] text-red-600 font-bold uppercase tracking-widest">Total OUT Today</p>
+              <p className="text-2xl font-black text-red-700 mt-1">{totalOut.toFixed(2)}</p>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-              <p className="text-xs text-blue-600 font-medium uppercase tracking-wide">Total Movements</p>
-              <p className="text-2xl font-bold text-blue-700 mt-1">{filteredToday.length}</p>
-              <p className="text-xs text-blue-500 mt-0.5">
-                {new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })}
-              </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-widest">Movements</p>
+              <p className="text-2xl font-black text-blue-700 mt-1">{filteredToday.length}</p>
             </div>
           </>
         ) : (
-          // Stock status summary
           [
             { label:'Healthy',      count:counts.HEALTHY,      color:'bg-green-50 border-green-200',   textColor:'text-green-700',  key:'HEALTHY' },
             { label:'Low Stock',    count:counts.LOW_STOCK,    color:'bg-yellow-50 border-yellow-200', textColor:'text-yellow-700', key:'LOW_STOCK' },
@@ -307,10 +367,9 @@ export default function Inventory() {
           ].map(card => (
             <button key={card.label}
               onClick={() => { setStatusFilter(s => s === card.key ? 'All' : card.key); setTab('stock') }}
-              className={`border rounded-xl p-4 text-left transition-all ${card.color} ${statusFilter === card.key ? 'ring-2 ring-gray-400' : 'hover:shadow-sm'}`}>
-              <p className={`text-2xl font-bold ${card.textColor}`}>{card.count}</p>
-              <p className="text-sm text-gray-600 mt-0.5">{card.label}</p>
-              {statusFilter === card.key && <p className="text-xs text-gray-500 mt-1">Click to clear filter</p>}
+              className={`border rounded-xl p-4 text-left transition-all shadow-sm ${card.color} ${statusFilter === card.key ? 'ring-2 ring-gray-400' : 'hover:scale-[1.02]'}`}>
+              <p className={`text-2xl font-black ${card.textColor}`}>{card.count}</p>
+              <p className="text-xs font-bold text-gray-600 mt-0.5 uppercase tracking-wide">{card.label}</p>
             </button>
           ))
         )}
@@ -318,7 +377,7 @@ export default function Inventory() {
 
       {/* Tabs */}
       <div className="border-b border-gray-200">
-        <nav className="flex gap-1 overflow-x-auto">
+        <nav className="flex gap-1 overflow-x-auto scrollbar-hide">
           <TabBtn k="stock"   label="Current Stock" />
           <TabBtn k="master"  label="Item Master" />
           <TabBtn k="today"   label="Today's Stock" />
@@ -330,106 +389,106 @@ export default function Inventory() {
       {tab === 'stock' && (
         <div className="space-y-4">
           <div className="flex gap-3 flex-wrap">
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search items..."
-              className="flex-1 min-w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400" />
-            <select value={catFilter} onChange={e => setCatFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search current items..." className="flex-1 min-w-48 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-gray-200 outline-none shadow-sm" />
+            <select value={catFilter} onChange={e => setCatFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none shadow-sm bg-white">
               <option value="All">All Categories</option>
               {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
               {[...new Set(items.map(i => i.itemCategory))].filter(cat => !categories.some(c => c.name === cat)).map(cat => <option key={cat} value={cat}>{cat}</option>)}
             </select>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none shadow-sm bg-white">
               <option value="All">All Status</option>
               <option value="HEALTHY">Healthy</option>
               <option value="LOW_STOCK">Low Stock</option>
               <option value="OUT_OF_STOCK">Out of Stock</option>
             </select>
-            <button onClick={fetchItems} className="border border-gray-300 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">↻ Refresh</button>
           </div>
 
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">Loading...</div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <p className="text-lg">No inventory items found</p>
-              <p className="text-sm mt-1">Add items using the "Add Item" button or go to Item Master tab</p>
-            </div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    {['Item Name','Category','Current Stock','Threshold','Cost/Unit','Status','Actions'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 text-xs uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filtered.map(item => {
-                    const sc = STATUS_CONFIG[item.stockStatus] || STATUS_CONFIG.HEALTHY
-                    return (
-                      <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-4 py-3 font-medium text-gray-900">{item.itemName}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCatColor(item.itemCategory, categories)}`}>{item.itemCategory}</span>
-                        </td>
-                        <td className="px-4 py-3 font-semibold">{item.currentStock} <span className="text-gray-400 font-normal text-xs">{item.stockUnit}</span></td>
-                        <td className="px-4 py-3 text-gray-500">{item.reorderThreshold} {item.stockUnit}</td>
-                        <td className="px-4 py-3 text-gray-500">₹{item.costPerUnit.toFixed(2)}</td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${sc.cls}`}>{sc.label}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <button onClick={() => openAdj(item,'add')}    className="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700">+ Add</button>
-                            <button onClick={() => openAdj(item,'deduct')} className="bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700">- Deduct</button>
-                            <button onClick={() => openEdit(item)}         className="border border-gray-300 px-3 py-1 rounded text-xs hover:bg-gray-50">Edit</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Item Name','Category','Current Stock','Threshold','Cost/Unit','Status','Actions'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-bold text-gray-500 text-[10px] uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map(item => {
+                  const sc = STATUS_CONFIG[item.stockStatus] || STATUS_CONFIG.HEALTHY
+                  return (
+                    <tr key={item.id} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-gray-900">{item.itemName}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-tight ${getCatColor(item.itemCategory, categories)}`}>{item.itemCategory}</span>
+                      </td>
+                      <td className="px-4 py-3 font-bold text-gray-900">{item.currentStock} <span className="text-gray-400 font-normal text-xs">{item.stockUnit}</span></td>
+                      <td className="px-4 py-3 text-gray-500 text-xs font-medium">{item.reorderThreshold} {item.stockUnit}</td>
+                      <td className="px-4 py-3 text-gray-500 text-xs font-medium">₹{item.costPerUnit.toFixed(2)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border uppercase tracking-tight ${sc.cls}`}>{sc.label}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button onClick={() => openAdj(item,'add')}    className="bg-green-600 text-white px-3 py-1 rounded text-[10px] font-black hover:bg-green-700 active:scale-95 transition-all shadow-sm">ADD</button>
+                          <button onClick={() => openAdj(item,'deduct')} className="bg-red-600 text-white px-3 py-1 rounded text-[10px] font-black hover:bg-red-700 active:scale-95 transition-all shadow-sm">DEDUCT</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+            {filtered.length === 0 && <div className="p-12 text-center text-gray-400 italic">No matching items in stock</div>}
+          </div>
         </div>
       )}
 
       {/* ── Tab: Item Master ────────────────────────────────────────────────── */}
       {tab === 'master' && (
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="flex gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
+            <Autocomplete 
+              label="Search Master Items" 
+              selected={histItems} // Reuse histItems or create a new state? 
+              // Actually, Item Master filtering is usually local. 
+              // The user asked for "autoselect dropdown".
+              // Let's use a simpler version or just the Autocomplete for consistency.
+              setSelected={setHistItems} 
+              searchVal={masterSearch} 
+              setSearchVal={setMasterSearch} 
+              show={showItemsHist} 
+              setShow={setShowItemsHist} 
+            />
+          </div>
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   {['Item Name','Category','Unit','Threshold','Cost/Unit','Status','Actions'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 text-xs uppercase tracking-wide">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left font-bold text-gray-500 text-[10px] uppercase tracking-widest">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {items.map(item => (
-                  <tr key={item.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">{item.itemName}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${getCatColor(item.itemCategory, categories)}`}>{item.itemCategory}</span></td>
-                    <td className="px-4 py-3 text-gray-500">{item.stockUnit}</td>
-                    <td className="px-4 py-3 text-gray-500">{item.reorderThreshold}</td>
-                    <td className="px-4 py-3 text-gray-500">₹{item.costPerUnit.toFixed(2)}</td>
-                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs ${item.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{item.status}</span></td>
+                {masterFiltered.map(item => (
+                  <tr key={item.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 font-semibold text-gray-900">{item.itemName}</td>
+                    <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-tight ${getCatColor(item.itemCategory, categories)}`}>{item.itemCategory}</span></td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-medium uppercase">{item.stockUnit}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-medium">{item.reorderThreshold}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-medium">₹{item.costPerUnit.toFixed(2)}</td>
+                    <td className="px-4 py-3"><span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-tight ${item.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{item.status}</span></td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(item)}    className="border border-gray-300 px-3 py-1 rounded text-xs hover:bg-gray-50">Edit</button>
-                        <button onClick={() => softDelete(item)}  className="border border-red-200 text-red-600 px-3 py-1 rounded text-xs hover:bg-red-50">Remove</button>
+                        <button onClick={() => openEdit(item)}    className="border border-gray-300 px-3 py-1 rounded text-[10px] font-black hover:bg-gray-50 active:scale-95 transition-all">EDIT</button>
+                        <button onClick={() => softDelete(item)}  className="border border-red-200 text-red-600 px-3 py-1 rounded text-[10px] font-black hover:bg-red-50 active:scale-95 transition-all">REMOVE</button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {items.length === 0 && !loading && (
-              <div className="text-center py-12 text-gray-400">No items yet. Click "Add Item" to get started.</div>
-            )}
+            {masterFiltered.length === 0 && <div className="p-12 text-center text-gray-400 italic">No master items match your search</div>}
           </div>
         </div>
       )}
@@ -437,213 +496,168 @@ export default function Inventory() {
       {/* ── Tab: Today's Stock ──────────────────────────────────────────────── */}
       {tab === 'today' && (
         <div className="space-y-4">
-
-          {/* Per-item summary cards */}
-          {Object.values(todaySummary).length > 0 && (
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <p className="text-sm font-semibold text-gray-700 mb-3">📦 Per-Item Summary</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                {Object.values(todaySummary).map(s => (
-                  <div key={s.name} className="border border-gray-100 rounded-lg p-3 bg-gray-50">
-                    <p className="text-xs font-semibold text-gray-800 truncate">{s.name}</p>
-                    <div className="flex gap-3 mt-1.5">
-                      {s.inQty  > 0 && <span className="text-xs text-green-700">▲ {s.inQty.toFixed(2)} {s.unit}</span>}
-                      {s.outQty > 0 && <span className="text-xs text-red-700">▼ {s.outQty.toFixed(2)} {s.unit}</span>}
-                    </div>
+          <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">📦 Movement Summary</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {Object.values(todaySummary).map(s => (
+                <div key={s.name} className="border border-gray-100 rounded-xl p-3 bg-gray-50/50">
+                  <p className="text-xs font-bold text-gray-800 truncate">{s.name}</p>
+                  <div className="flex gap-3 mt-1.5">
+                    {s.inQty  > 0 && <span className="text-[10px] font-black text-green-700">▲ {s.inQty.toFixed(2)}</span>}
+                    {s.outQty > 0 && <span className="text-[10px] font-black text-red-700">▼ {s.outQty.toFixed(2)}</span>}
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          )}
-
-          {/* Filters */}
-          <div className="flex gap-3 flex-wrap items-center justify-between">
-            <div className="flex gap-3 flex-wrap">
-              <select value={todayMove} onChange={e => setTodayMove(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                <option value="All">All Movements</option>
-                <option value="INWARD">▲ Stock IN</option>
-                <option value="OUTWARD">▼ Stock OUT</option>
-              </select>
-              <select value={todayItem} onChange={e => setTodayItem(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                <option value="">All Items</option>
-                {items.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
-              </select>
-              <select value={todaySrc} onChange={e => setTodaySrc(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                {SOURCES.map(s => <option key={s} value={s}>{s === 'All' ? 'All Sources' : s.replace(/_/g,' ')}</option>)}
-              </select>
-              <button onClick={fetchTodayHistory} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm">Apply</button>
-            </div>
-            <ExportBtn rows={filteredToday} filename={`stock-today-${today()}.csv`} />
           </div>
 
-          {/* Table */}
-          {todayLoading ? (
-            <div className="text-center py-12 text-gray-400">Loading today's movements...</div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    {['Time','Item','Category','Movement','Qty','Source','Remarks'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 text-xs uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredToday.map(row => (
-                    <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
-                        {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{row.inventoryItem?.itemName}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getCatColor(row.inventoryItem?.itemCategory, categories)}`}>
-                          {row.inventoryItem?.itemCategory}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.movementType === 'INWARD' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {row.movementType === 'INWARD' ? '▲ IN' : '▼ OUT'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold">{row.quantity} <span className="text-gray-400 text-xs font-normal">{row.unit}</span></td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{row.source?.replace(/_/g,' ')}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{row.remarks || '—'}</td>
-                    </tr>
-                  ))}
-                  {filteredToday.length === 0 && (
-                    <tr><td colSpan={7} className="text-center py-10 text-gray-400">No stock movements recorded today</td></tr>
-                  )}
-                </tbody>
-              </table>
+          <div className="flex gap-4 flex-wrap items-end bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
+            <select value={todayMove} onChange={e => setTodayMove(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none shadow-sm bg-white h-[38px] min-w-[140px]">
+              <option value="All">All Movements</option>
+              <option value="INWARD">▲ Stock IN</option>
+              <option value="OUTWARD">▼ Stock OUT</option>
+            </select>
+            <MultiSelect label="Sources" selected={todaySources} options={SOURCES} onToggle={s => setTodaySources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcToday} setShow={setShowSrcToday} onClear={() => setTodaySources([])} />
+            <Autocomplete label="Items" selected={todayItems} setSelected={setTodayItems} searchVal={itemSearchToday} setSearchVal={setItemSearchToday} show={showItemsToday} setShow={setShowItemsToday} />
+            <div className="flex gap-2">
+              <button onClick={fetchTodayHistory} className="bg-gray-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition-all h-[38px]">Apply</button>
+              <ExportBtn rows={filteredToday} filename={`stock-today-${today()}.csv`} />
             </div>
-          )}
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Time','Item','Movement','Qty','Source','Remarks'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-bold text-gray-500 text-[10px] uppercase tracking-widest">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredToday.map(row => (
+                  <tr key={row.id} className="hover:bg-gray-50/50">
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">
+                      {new Date(row.createdAt).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' })}
+                    </td>
+                    <td className="px-4 py-3 font-semibold text-gray-900">
+                      {row.inventoryItem?.itemName}
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">{row.inventoryItem?.itemCategory}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-black tracking-tight ${row.movementType === 'INWARD' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {row.movementType === 'INWARD' ? '▲ IN' : '▼ OUT'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-bold text-gray-900">{row.quantity} <span className="text-gray-400 text-[10px] font-normal uppercase">{row.unit}</span></td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-medium">{row.source?.replace(/_/g,' ')}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs truncate max-w-[200px]" title={row.remarks}>{row.remarks || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredToday.length === 0 && <div className="p-12 text-center text-gray-400 italic">No movements recorded today</div>}
+          </div>
         </div>
       )}
 
       {/* ── Tab: Stock History ──────────────────────────────────────────────── */}
       {tab === 'history' && (
         <div className="space-y-4">
-          <div className="flex gap-3 flex-wrap items-end justify-between">
-            <div className="flex gap-3 flex-wrap items-end">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">From</label>
-                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">To</label>
-                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Movement</label>
-                <select value={histMove} onChange={e => setHistMove(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                  <option value="All">All</option>
-                  <option value="INWARD">▲ IN</option>
-                  <option value="OUTWARD">▼ OUT</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Source</label>
-                <select value={srcFilter} onChange={e => setSrcFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                  {SOURCES.map(s => <option key={s} value={s}>{s === 'All' ? 'All Sources' : s.replace(/_/g,' ')}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Item</label>
-                <select value={histItem} onChange={e => setHistItem(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                  <option value="">All Items</option>
-                  {items.map(i => <option key={i.id} value={i.id}>{i.itemName}</option>)}
-                </select>
-              </div>
-              <button onClick={fetchHistory} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm">Apply</button>
+          <div className="bg-white p-4 border border-gray-200 rounded-xl shadow-sm flex gap-4 flex-wrap items-end">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">From</label>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-200 outline-none h-[38px] shadow-sm" />
             </div>
-            <ExportBtn rows={filteredHistory} filename={`stock-history-${dateFrom}-to-${dateTo}.csv`} />
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">To</label>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-200 outline-none h-[38px] shadow-sm" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">Movement</label>
+              <select value={histMove} onChange={e => setHistMove(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none h-[38px] shadow-sm bg-white min-w-[120px]">
+                <option value="All">All</option>
+                <option value="INWARD">▲ IN</option>
+                <option value="OUTWARD">▼ OUT</option>
+              </select>
+            </div>
+            <MultiSelect label="Sources" selected={histSources} options={SOURCES} onToggle={s => setHistSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcHist} setShow={setShowSrcHist} onClear={() => setHistSources([])} />
+            <Autocomplete label="Items" selected={histItems} setSelected={setHistItems} searchVal={itemSearchHist} setSearchVal={setItemSearchHist} show={showItemsHist} setShow={setShowItemsHist} />
+            <div className="flex gap-2">
+              <button onClick={fetchHistory} className="bg-gray-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition-all h-[38px]">Apply</button>
+              <ExportBtn rows={filteredHistory} filename={`stock-history-${dateFrom}-to-${dateTo}.csv`} />
+            </div>
           </div>
 
-          {histLoading ? (
-            <div className="text-center py-12 text-gray-400">Loading history...</div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    {['Date','Item','Category','Movement','Qty','Source','Reference','Remarks'].map(h => (
-                      <th key={h} className="px-4 py-3 text-left font-medium text-gray-600 text-xs uppercase tracking-wide">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {filteredHistory.map(row => (
-                    <tr key={row.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">{fmtDate(row.createdAt)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{row.inventoryItem?.itemName}</td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getCatColor(row.inventoryItem?.itemCategory, categories)}`}>
-                          {row.inventoryItem?.itemCategory}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${row.movementType === 'INWARD' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {row.movementType === 'INWARD' ? '▲ IN' : '▼ OUT'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold">{row.quantity} <span className="text-gray-400 text-xs font-normal">{row.unit}</span></td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{row.source?.replace(/_/g,' ')}</td>
-                      <td className="px-4 py-3 text-gray-400 text-xs">{row.referenceId || '—'}</td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{row.remarks || '—'}</td>
-                    </tr>
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Date','Item','Movement','Qty','Source','Reference','Remarks'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left font-bold text-gray-500 text-[10px] uppercase tracking-widest">{h}</th>
                   ))}
-                  {filteredHistory.length === 0 && (
-                    <tr><td colSpan={8} className="text-center py-8 text-gray-400">No history found for selected filters</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredHistory.map(row => (
+                  <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs font-medium">{fmtDate(row.createdAt)}</td>
+                    <td className="px-4 py-3 font-semibold text-gray-900">
+                      {row.inventoryItem?.itemName}
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">{row.inventoryItem?.itemCategory}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded-full text-[10px] font-black tracking-tight ${row.movementType === 'INWARD' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {row.movementType === 'INWARD' ? '▲ IN' : '▼ OUT'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-bold text-gray-900">{row.quantity} <span className="text-gray-400 text-[10px] font-normal uppercase">{row.unit}</span></td>
+                    <td className="px-4 py-3 text-gray-500 text-xs font-medium">{row.source?.replace(/_/g,' ')}</td>
+                    <td className="px-4 py-3 text-gray-400 text-[10px] font-mono">{row.referenceId || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 text-xs truncate max-w-[150px]" title={row.remarks}>{row.remarks || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filteredHistory.length === 0 && <div className="p-12 text-center text-gray-400 italic">No history records found for your filters</div>}
+          </div>
         </div>
       )}
 
       {/* ── Stock Adjustment Modal ──────────────────────────────────────────── */}
       {adjModal && adjItem && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex justify-between items-center p-5 border-b">
-              <h2 className="font-semibold text-gray-900">{adjMode === 'add' ? '➕ Add Stock' : '➖ Deduct Stock'} — {adjItem.itemName}</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center p-5 border-b bg-gray-50">
+              <h2 className="font-bold text-gray-900 uppercase tracking-tight">{adjMode === 'add' ? '➕ Add Stock' : '➖ Deduct Stock'} — {adjItem.itemName}</h2>
               <button onClick={() => setAdjModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
-            <div className="p-5 space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3 text-sm">
-                <span className="text-gray-500">Current Stock: </span>
-                <span className="font-semibold">{adjItem.currentStock} {adjItem.stockUnit}</span>
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm flex justify-between items-center">
+                <div>
+                  <p className="text-blue-600 font-bold uppercase text-[10px] tracking-widest mb-1">Current Stock</p>
+                  <p className="text-xl font-black text-blue-900">{adjItem.currentStock} <span className="text-sm font-normal opacity-70">{adjItem.stockUnit}</span></p>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity ({adjItem.stockUnit}) *</label>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Quantity to {adjMode === 'add' ? 'Increase' : 'Decrease'} ({adjItem.stockUnit}) *</label>
                 <input type="number" value={adjQty} onChange={e => setAdjQty(e.target.value)} min="0.001" step="0.001"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-                  placeholder={`Enter quantity in ${adjItem.stockUnit}`} />
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg font-bold focus:ring-2 focus:ring-gray-900 outline-none shadow-sm"
+                  placeholder="0.00" />
               </div>
-              {adjMode === 'deduct' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
-                  <input value={adjReason} onChange={e => setAdjReason(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-                    placeholder="e.g. Spillage, Expiry, Testing..." />
-                </div>
-              )}
-              {adjMode === 'add' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Remarks (optional)</label>
-                  <input value={adjReason} onChange={e => setAdjReason(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    placeholder="e.g. Restock purchase..." />
-                </div>
-              )}
+              <div>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">{adjMode === 'deduct' ? 'Reason for Deduction *' : 'Internal Remarks'}</label>
+                <textarea value={adjReason} onChange={e => setAdjReason(e.target.value)} rows={2}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-gray-900 outline-none shadow-sm"
+                  placeholder={adjMode === 'deduct' ? "e.g. Spillage, item expired..." : "Optional notes..."} />
+              </div>
             </div>
-            <div className="flex gap-3 p-5 pt-0">
-              <button onClick={() => setAdjModal(false)} className="flex-1 border border-gray-300 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+            <div className="flex gap-3 p-6 pt-0">
+              <button onClick={() => setAdjModal(false)} className="flex-1 border border-gray-200 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-colors">CANCEL</button>
               <button onClick={submitAdj} disabled={adjLoading}
-                className={`flex-1 py-2 rounded-lg text-sm font-medium text-white transition-colors ${adjMode === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'} disabled:opacity-50`}>
-                {adjLoading ? 'Processing...' : adjMode === 'add' ? 'Add Stock' : 'Deduct Stock'}
+                className={`flex-1 py-3 rounded-xl text-sm font-black text-white transition-all shadow-lg active:scale-95 disabled:opacity-50
+                  ${adjMode === 'add' ? 'bg-green-600 hover:bg-green-700 shadow-green-100' : 'bg-red-600 hover:bg-red-700 shadow-red-100'}`}>
+                {adjLoading ? 'PROCESSING...' : adjMode === 'add' ? 'CONFIRM ADD' : 'CONFIRM DEDUCT'}
               </button>
             </div>
           </div>
@@ -652,56 +666,50 @@ export default function Inventory() {
 
       {/* ── Item Master Modal ───────────────────────────────────────────────── */}
       {masterModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex justify-between items-center p-5 border-b">
-              <h2 className="font-semibold text-gray-900">{editingItem ? 'Edit Item' : 'New Inventory Item'}</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center p-5 border-b bg-gray-50">
+              <h2 className="font-bold text-gray-900 uppercase tracking-tight">{editingItem ? 'Edit Item' : 'New Inventory Item'}</h2>
               <button onClick={() => setMasterModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
-            <div className="p-5 space-y-4">
+            <div className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Item Name *</label>
                 <input value={form.itemName} onChange={e => setForm(f => ({...f, itemName: e.target.value}))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-gray-900 outline-none shadow-sm font-medium"
                   placeholder="e.g. Onion, Aluminium Foil..." />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                  <select value={form.itemCategory} onChange={e => setForm(f => ({...f, itemCategory: e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                    {categories.length > 0
-                      ? categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
-                      : <option value="">No categories yet — add in Expenditure → Masters</option>
-                    }
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Category *</label>
+                  <select value={form.itemCategory} onChange={e => setForm(f => ({...f, itemCategory: e.target.value}))} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none shadow-sm font-medium bg-white">
+                    {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                   </select>
-                  {categories.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">⚠ Add stock-affecting expense categories first in Expenditure → Masters tab.</p>
-                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Stock Unit *</label>
-                  <select value={form.stockUnit} onChange={e => setForm(f => ({...f, stockUnit: e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Unit *</label>
+                  <select value={form.stockUnit} onChange={e => setForm(f => ({...f, stockUnit: e.target.value}))} className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none shadow-sm font-medium bg-white">
                     {UNITS.map(u => <option key={u}>{u}</option>)}
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Reorder Threshold</label>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Reorder Threshold</label>
                   <input type="number" value={form.reorderThreshold} onChange={e => setForm(f => ({...f, reorderThreshold: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="0" min="0" step="0.01" />
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none shadow-sm" placeholder="0" min="0" step="0.01" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost per Unit (₹)</label>
+                  <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5">Cost per Unit (₹)</label>
                   <input type="number" value={form.costPerUnit} onChange={e => setForm(f => ({...f, costPerUnit: e.target.value}))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none" placeholder="0.00" min="0" step="0.01" />
+                    className="w-full border border-gray-300 rounded-xl px-4 py-2 text-sm focus:outline-none shadow-sm" placeholder="0.00" min="0" step="0.01" />
                 </div>
               </div>
             </div>
-            <div className="flex gap-3 p-5 pt-0">
-              <button onClick={() => setMasterModal(false)} className="flex-1 border border-gray-300 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
-              <button onClick={submitMaster} disabled={formLoading} className="flex-1 bg-gray-900 text-white py-2 rounded-lg text-sm font-medium hover:bg-gray-700 disabled:opacity-50">
-                {formLoading ? 'Saving...' : editingItem ? 'Save Changes' : 'Create Item'}
+            <div className="flex gap-3 p-6 pt-0">
+              <button onClick={() => setMasterModal(false)} className="flex-1 border border-gray-200 py-3 rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-colors">CANCEL</button>
+              <button onClick={submitMaster} disabled={formLoading} className="flex-1 bg-gray-900 text-white py-3 rounded-xl text-sm font-black shadow-lg hover:bg-gray-800 active:scale-95 transition-all disabled:opacity-50">
+                {formLoading ? 'SAVING...' : editingItem ? 'SAVE CHANGES' : 'CREATE ITEM'}
               </button>
             </div>
           </div>

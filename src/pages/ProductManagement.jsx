@@ -468,7 +468,7 @@ const ProductManagement = () => {
                                             e.target.src = '/api/placeholder/200/200';
                                         }}
                                     />
-                                    {(product.inventory?.quantity || 0) === 0 && (
+                                    {(product.calculatedQuantity || 0) === 0 && (
                                         <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center">
                                             <span className="text-white text-lg font-semibold">Out of Stock</span>
                                         </div>
@@ -952,7 +952,7 @@ const ProductManagement = () => {
                                 <>
                                     <div>
                                         <span className="font-semibold">Current Stock: </span>
-                                        <span className="text-orange-600 font-semibold">{selectedProduct.inventory.quantity}</span>
+                                        <span className="text-orange-600 font-semibold">{selectedProduct.calculatedQuantity || 0}</span>
                                     </div>
                                     <div>
                                         <span className="font-semibold">Alert Threshold: </span>
