@@ -220,8 +220,10 @@ export default function Inventory() {
 
   const masterFiltered = items.filter(i => {
     const matchSearch = i.itemName.toLowerCase().includes(masterSearch.toLowerCase())
-    const matchSelected = masterSelectedItems.length === 0 || masterSelectedItems.some(s => s.id === i.id)
-    return matchSearch && matchSelected
+    if (masterSelectedItems.length > 0) {
+      return masterSelectedItems.some(s => s.id === i.id)
+    }
+    return matchSearch
   })
 
   const counts = { HEALTHY:0, LOW_STOCK:0, OUT_OF_STOCK:0 }
@@ -292,7 +294,16 @@ export default function Inventory() {
               <button onClick={() => setSelected(selected.filter(i => i.id !== item.id))} className="hover:text-red-500 ml-0.5 text-[10px]">✕</button>
             </span>
           ))}
-          <input value={searchVal} onChange={e => setSearchVal(e.target.value)} onFocus={() => setShow(true)} placeholder={selected.length === 0 ? "Search & select items..." : ""} className="flex-1 outline-none px-2 py-1 text-sm bg-transparent min-w-[120px]" />
+          <input 
+            value={searchVal} 
+            onChange={e => {
+              setSearchVal(e.target.value);
+              if (!show) setShow(true);
+            }} 
+            onFocus={() => setShow(true)} 
+            placeholder={selected.length === 0 ? "Search & select items..." : ""} 
+            className="flex-1 outline-none px-2 py-1 text-sm bg-transparent min-w-[120px]" 
+          />
         </div>
         {show && (
           <>

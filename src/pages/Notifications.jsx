@@ -206,6 +206,22 @@ const Notifications = () => {
     setCouponFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const uploadNotificationImage = async (file) => {
+    if (!file) return null;
+    const formData = new FormData();
+    formData.append('image', file);
+    const token = localStorage.getItem('token');
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5500/api';
+    const resp = await fetch(`${apiBase}/superadmin/notifications/upload-image`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.message || 'Image upload failed');
+    return data.imageUrl;
+  };
+
   const handleSendImmediate = async () => {
     // Validation
     if (!notificationFormData.title || !notificationFormData.message) {
@@ -217,10 +233,17 @@ const Notifications = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
 
-      const notificationData = {
+      let imageUrl = null;
+      if (notificationFormData.imageUrl instanceof File) {
+        imageUrl = await uploadNotificationImage(notificationFormData.imageUrl);
+      }
+
+      const payload = {
         title: notificationFormData.title.trim(),
         message: notificationFormData.message.trim(),
         outletId: parseInt(outletId),
+        imageUrl: imageUrl,
+        type: 'GENERAL'
       };
 
       await apiRequest('/superadmin/notifications/send-immediate', {
@@ -229,7 +252,7 @@ const Notifications = () => {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
-        body: notificationData,
+        body: payload,
       });
 
       toast.success('Notification sent immediately');
@@ -265,13 +288,18 @@ const Notifications = () => {
       setLoading(true);
       const token = localStorage.getItem('token');
 
+      let imageUrl = null;
+      if (notificationFormData.imageUrl instanceof File) {
+        imageUrl = await uploadNotificationImage(notificationFormData.imageUrl);
+      }
+
       const notificationData = {
         title: notificationFormData.title.trim(),
         message: notificationFormData.message.trim(),
         priority: notificationFormData.priority,
         scheduledDate: notificationFormData.scheduledDate,
         scheduledTime: notificationFormData.scheduledTime,
-        imageUrl: notificationFormData.imageUrl || null,
+        imageUrl: imageUrl,
         outletId: parseInt(outletId),
       };
 
@@ -296,10 +324,65 @@ const Notifications = () => {
     }
   };
 
-  const handlePromotionSubmit = (e) => {
+  const handlePromotionSubmit = async (e) => {
     e.preventDefault();
-    console.log('Promotion Data:', promotionFormData);
-    toast.success("Promotion Sent");
+    if (!promotionFormData.title || !promotionFormData.description) {
+      toast.error('Title and description are required');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      let imageUrl = null;
+      if (promotionFormData.image instanceof File) {
+        imageUrl = await uploadNotificationImage(promotionFormData.image);
+      }
+
+      const token = localStorage.getItem('token');
+      const payload = {
+        title: promotionFormData.title.trim(),
+        message: promotionFormData.description.trim(),
+        outletId: parseInt(outletId),
+        imageUrl: imageUrl,
+        type: 'PROMOTION'
+      };
+
+      // If scheduled
+      if (promotionFormData.scheduleDate && promotionFormData.scheduleTime) {
+         await apiRequest('/superadmin/notifications/schedule', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: {
+            ...payload,
+            priority: promotionFormData.type?.toUpperCase() || 'MEDIUM',
+            scheduledDate: promotionFormData.scheduleDate,
+            scheduledTime: promotionFormData.scheduleTime
+          },
+        });
+        toast.success('Promotion scheduled successfully');
+        fetchScheduledNotifications();
+      } else {
+        await apiRequest('/superadmin/notifications/send-immediate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: payload,
+        });
+        toast.success('Promotion sent immediately');
+      }
+
+      handlePromotionReset();
+    } catch (error) {
+      console.error('Error submitting promotion:', error);
+      toast.error(error.message || 'Error submitting promotion');
+    } finally {
+      setLoading(false);
+    }
   };
 
 const handleCouponSubmit = async (e) => {
@@ -374,11 +457,12 @@ const handleCouponSubmit = async (e) => {
         
         const notificationData = {
           title: `🎉 New Coupon Available: ${couponFormData.code.trim().toUpperCase()}`,
-          message: `Exciting news! Use coupon code "${couponFormData.code.trim().toUpperCase()}" and save ${couponFormData.rewardValue * 100}% ${couponFormData.minOrderValue ? ` on orders above ₹${couponFormData.minOrderValue}` : ''}. Valid until ${new Date(couponFormData.validUntil).toLocaleDateString()}. Limited usage - hurry up!`,
+          message: `Exciting news! Use coupon code "${couponFormData.code.trim().toUpperCase()}" and save ${couponFormData.rewardValue}% ${couponFormData.minOrderValue ? ` on orders above ₹${couponFormData.minOrderValue}` : ''}. Valid until ${new Date(couponFormData.validUntil).toLocaleDateString()}. Limited usage - hurry up!`,
           outletId: parseInt(outletId),
+          type: 'COUPON'
         };
 
-        const notificationResult = await apiRequest('/superadmin/notifications/send-immediate', {
+        await apiRequest('/superadmin/notifications/send-immediate', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

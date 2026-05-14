@@ -578,6 +578,9 @@ const ProductManagement = () => {
                             value={formData.name}
                             onChange={handleInputChange}
                             required
+                            autoCapitalize="sentences"
+                            spellCheck="true"
+                            autoCorrect="on"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
@@ -592,6 +595,9 @@ const ProductManagement = () => {
                             onChange={handleInputChange}
                             required
                             rows={2}
+                            autoCapitalize="sentences"
+                            spellCheck="true"
+                            autoCorrect="on"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
@@ -728,6 +734,9 @@ const ProductManagement = () => {
                             value={editFormData.name}
                             onChange={handleEditInputChange}
                             required
+                            autoCapitalize="sentences"
+                            spellCheck="true"
+                            autoCorrect="on"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
@@ -742,6 +751,9 @@ const ProductManagement = () => {
                             onChange={handleEditInputChange}
                             required
                             rows={3}
+                            autoCapitalize="sentences"
+                            spellCheck="true"
+                            autoCorrect="on"
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
