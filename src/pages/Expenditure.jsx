@@ -9,6 +9,39 @@ const weekAgo = () => { const d = new Date(); d.setDate(d.getDate() - 7); return
 
 const formatDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 
+// ── CSV Export helper ─────────────────────────────────────────────────────────
+const exportCSV = (rows, columns, filename) => {
+  const header = columns.map(c => c.label).join(',')
+  const body   = rows.map(r => columns.map(c => {
+    const val = c.get(r)
+    return `"${String(val ?? '').replace(/"/g, '""')}"`
+  }).join(','))
+  const csv  = [header, ...body].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
+const EXPENSE_COLS = [
+  { label: 'Date',        get: r => formatDate(r.expenseDate) },
+  { label: 'Category',    get: r => r.category || '' },
+  { label: 'Description', get: r => r.description || '' },
+  { label: 'Quantity',    get: r => r.quantity ? `${r.quantity} ${r.unit || ''}` : '' },
+  { label: 'Amount',      get: r => r.amount.toFixed(2) },
+  { label: 'Method',      get: r => r.method || '' },
+  { label: 'Paid To',     get: r => r.paidTo || '' },
+  { label: 'Notes',       get: r => r.notes || '' },
+]
+
+const ExportBtn = ({ rows, filename }) => (
+  <button onClick={() => exportCSV(rows, EXPENSE_COLS, filename)}
+    className="flex items-center gap-1.5 border border-green-600 text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm">
+    ⬇ Export CSV
+  </button>
+)
+
 const SearchableSelect = ({ options, value, onChange, placeholder, disabled, emptyMessage }) => {
   const [searchTerm, setSearchTerm] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -279,6 +312,7 @@ export default function Expenditure() {
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
             </div>
             <button onClick={fetchExpenses} className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm">Apply</button>
+            <ExportBtn rows={expenses} filename={`expenses-${dateFrom}-to-${dateTo}.csv`} />
           </div>
 
           {expenses.length > 0 && (

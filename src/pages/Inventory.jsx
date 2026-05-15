@@ -252,32 +252,51 @@ export default function Inventory() {
   const [showItemsHist, setShowItemsHist] = useState(false)
   const [showItemsToday, setShowItemsToday] = useState(false)
 
-  const MultiSelect = ({ label, selected, options, onToggle, show, setShow, onClear }) => (
-    <div className="relative">
-      <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
-      <button onClick={() => setShow(!show)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[160px] text-left bg-white flex justify-between items-center shadow-sm">
-        <span className="truncate">{selected.length === 0 ? `All ${label}` : `${selected.length} selected`}</span>
-        <span className="text-gray-400 text-[10px]">▼</span>
-      </button>
-      {show && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
-          <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-2 space-y-1">
-            {options.filter(o => o !== 'All').map(o => (
-              <label key={o} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-xs">
-                <input type="checkbox" checked={selected.includes(o)} onChange={() => onToggle(o)} className="rounded text-gray-900 focus:ring-gray-900 h-3.5 w-3.5" />
-                {o.replace(/_/g, ' ')}
-              </label>
-            ))}
-            <div className="border-t pt-1.5 mt-1 flex justify-between px-1">
-              <button onClick={onClear} className="text-[10px] text-blue-600 font-bold uppercase hover:underline">Clear</button>
-              <button onClick={() => setShow(false)} className="text-[10px] text-gray-600 font-bold uppercase hover:underline">Close</button>
+  const MultiSelect = ({ label, selected, options, onToggle, show, setShow, onClear }) => {
+    const [search, setSearch] = useState('')
+    const filteredOptions = options.filter(o => 
+      o !== 'All' && o.toLowerCase().replace(/_/g, ' ').includes(search.toLowerCase())
+    )
+
+    return (
+      <div className="relative">
+        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
+        <button onClick={() => { setShow(!show); setSearch('') }} className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[160px] text-left bg-white flex justify-between items-center shadow-sm hover:border-gray-400 transition-colors">
+          <span className="truncate">{selected.length === 0 ? `All ${label}` : `${selected.length} selected`}</span>
+          <span className="text-gray-400 text-[10px]">{show ? '▲' : '▼'}</span>
+        </button>
+        {show && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
+            <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-2 space-y-1">
+              <div className="px-2 py-1 mb-1">
+                <input 
+                  autoFocus
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder={`Search ${label.toLowerCase()}...`}
+                  className="w-full text-xs border-b border-gray-100 outline-none pb-1 font-medium"
+                />
+              </div>
+              <div className="max-h-48 overflow-y-auto scrollbar-hide">
+                {filteredOptions.map(o => (
+                  <label key={o} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-xs group">
+                    <input type="checkbox" checked={selected.includes(o)} onChange={() => onToggle(o)} className="rounded text-gray-900 focus:ring-gray-900 h-3.5 w-3.5" />
+                    <span className="group-hover:text-gray-900 transition-colors">{o.replace(/_/g, ' ')}</span>
+                  </label>
+                ))}
+                {filteredOptions.length === 0 && <div className="p-2 text-center text-[10px] text-gray-400 italic">No matches</div>}
+              </div>
+              <div className="border-t pt-1.5 mt-1 flex justify-between px-1">
+                <button onClick={onClear} className="text-[10px] text-blue-600 font-bold uppercase hover:underline">Clear</button>
+                <button onClick={() => setShow(false)} className="text-[10px] text-gray-600 font-bold uppercase hover:underline">Close</button>
+              </div>
             </div>
-          </div>
-        </>
-      )}
-    </div>
-  )
+          </>
+        )}
+      </div>
+    )
+  }
 
   const Autocomplete = ({ label, selected, setSelected, searchVal, setSearchVal, show, setShow }) => {
     const suggestions = items.filter(i => 
@@ -301,7 +320,14 @@ export default function Inventory() {
               if (!show) setShow(true);
             }} 
             onFocus={() => setShow(true)} 
-            placeholder={selected.length === 0 ? "Search & select items..." : ""} 
+            onKeyDown={e => {
+              if (e.key === 'Enter' && suggestions.length > 0) {
+                setSelected([...selected, suggestions[0]]);
+                setSearchVal('');
+                setShow(false);
+              }
+            }}
+            placeholder={selected.length === 0 ? "Search & select items..." : "Type more..."} 
             className="flex-1 outline-none px-2 py-1 text-sm bg-transparent min-w-[120px]" 
           />
         </div>
