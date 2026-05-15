@@ -73,7 +73,6 @@ export default function Inventory() {
   const [statusFilter,setStatusFilter] = useState('All')
 
   // ── Master filters
-  const [masterSearch, setMasterSearch] = useState('')
   const [masterSelectedItems, setMasterSelectedItems] = useState([])
   const [showItemsMaster, setShowItemsMaster] = useState(false)
 
@@ -219,11 +218,10 @@ export default function Inventory() {
   })
 
   const masterFiltered = items.filter(i => {
-    const matchSearch = i.itemName.toLowerCase().includes(masterSearch.toLowerCase())
     if (masterSelectedItems.length > 0) {
       return masterSelectedItems.some(s => s.id === i.id)
     }
-    return matchSearch
+    return true
   })
 
   const counts = { HEALTHY:0, LOW_STOCK:0, OUT_OF_STOCK:0 }
@@ -244,52 +242,80 @@ export default function Inventory() {
   const totalIn  = filteredToday.filter(r => r.movementType === 'INWARD').reduce((s,r) => s + r.quantity, 0)
   const totalOut = filteredToday.filter(r => r.movementType === 'OUTWARD').reduce((s,r) => s + r.quantity, 0)
 
-  // ── Autocomplete / Multi-select UI Helpers ───────────────────────────────
+  // ── Multi-select Search UI Helper ─────────────────────────────────────────
   const [showSrcHist, setShowSrcHist] = useState(false)
   const [showSrcToday, setShowSrcToday] = useState(false)
-  const [itemSearchHist, setItemSearchHist] = useState('')
-  const [itemSearchToday, setItemSearchToday] = useState('')
   const [showItemsHist, setShowItemsHist] = useState(false)
   const [showItemsToday, setShowItemsToday] = useState(false)
 
-  const MultiSelect = ({ label, selected, options, onToggle, show, setShow, onClear }) => {
+  const MultiSelectSearch = ({ label, selected, options, onToggle, show, setShow, onClear, isItem = false }) => {
     const [search, setSearch] = useState('')
-    const filteredOptions = options.filter(o => 
-      o !== 'All' && o.toLowerCase().replace(/_/g, ' ').includes(search.toLowerCase())
-    )
+    const filteredOptions = options.filter(o => {
+      const name = isItem ? o.itemName : o
+      return name.toLowerCase().replace(/_/g, ' ').includes(search.toLowerCase())
+    })
+
+    const isSelected = (o) => isItem ? selected.some(s => s.id === o.id) : selected.includes(o)
 
     return (
-      <div className="relative">
+      <div className="relative flex-1 min-w-[200px]">
         <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
-        <button onClick={() => { setShow(!show); setSearch('') }} className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[160px] text-left bg-white flex justify-between items-center shadow-sm hover:border-gray-400 transition-colors">
-          <span className="truncate">{selected.length === 0 ? `All ${label}` : `${selected.length} selected`}</span>
-          <span className="text-gray-400 text-[10px]">{show ? '▲' : '▼'}</span>
+        <button 
+          onClick={() => { setShow(!show); setSearch('') }} 
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-left bg-white flex justify-between items-center shadow-sm hover:border-gray-400 transition-colors min-h-[38px]"
+        >
+          <div className="flex flex-wrap gap-1 items-center overflow-hidden mr-2">
+            {selected.length === 0 ? (
+              <span className="text-gray-400">{`Select ${label}...`}</span>
+            ) : (
+              selected.slice(0, 2).map((s, idx) => (
+                <span key={idx} className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[10px] font-bold border border-gray-200 whitespace-nowrap">
+                  {isItem ? s.itemName : s.replace(/_/g, ' ')}
+                </span>
+              ))
+            )}
+            {selected.length > 2 && <span className="text-[10px] text-blue-600 font-bold">+{selected.length - 2}</span>}
+          </div>
+          <span className="text-gray-400 text-[10px] flex-shrink-0">{show ? '▲' : '▼'}</span>
         </button>
         {show && (
           <>
             <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
-            <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-2 space-y-1">
-              <div className="px-2 py-1 mb-1">
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 p-2 space-y-1">
+              <div className="px-2 py-1 mb-1 border-b border-gray-50">
                 <input 
                   autoFocus
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder={`Search ${label.toLowerCase()}...`}
-                  className="w-full text-xs border-b border-gray-100 outline-none pb-1 font-medium"
+                  className="w-full text-sm outline-none pb-1 font-medium"
                 />
               </div>
-              <div className="max-h-48 overflow-y-auto scrollbar-hide">
-                {filteredOptions.map(o => (
-                  <label key={o} className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer text-xs group">
-                    <input type="checkbox" checked={selected.includes(o)} onChange={() => onToggle(o)} className="rounded text-gray-900 focus:ring-gray-900 h-3.5 w-3.5" />
-                    <span className="group-hover:text-gray-900 transition-colors">{o.replace(/_/g, ' ')}</span>
-                  </label>
-                ))}
-                {filteredOptions.length === 0 && <div className="p-2 text-center text-[10px] text-gray-400 italic">No matches</div>}
+              <div className="max-h-60 overflow-y-auto scrollbar-hide">
+                {filteredOptions.length > 0 ? (
+                  filteredOptions.map((o, idx) => (
+                    <label key={idx} className="flex items-center gap-2 px-2 py-2 hover:bg-gray-50 rounded cursor-pointer text-xs group transition-colors">
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected(o)} 
+                        onChange={() => onToggle(o)} 
+                        className="rounded text-gray-900 focus:ring-gray-900 h-4 w-4" 
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-gray-700 group-hover:text-gray-900">
+                          {isItem ? o.itemName : o.replace(/_/g, ' ')}
+                        </span>
+                        {isItem && <span className="text-[9px] text-gray-400 uppercase tracking-tighter">{o.itemCategory}</span>}
+                      </div>
+                    </label>
+                  ))
+                ) : (
+                  <div className="p-4 text-center text-xs text-gray-400 italic">No matches found</div>
+                )}
               </div>
-              <div className="border-t pt-1.5 mt-1 flex justify-between px-1">
-                <button onClick={onClear} className="text-[10px] text-blue-600 font-bold uppercase hover:underline">Clear</button>
-                <button onClick={() => setShow(false)} className="text-[10px] text-gray-600 font-bold uppercase hover:underline">Close</button>
+              <div className="border-t pt-2 mt-1 flex justify-between px-1">
+                <button onClick={onClear} className="text-[10px] text-blue-600 font-bold uppercase hover:underline">Clear All</button>
+                <button onClick={() => setShow(false)} className="text-[10px] text-gray-900 font-black uppercase hover:underline">Done</button>
               </div>
             </div>
           </>
@@ -298,59 +324,6 @@ export default function Inventory() {
     )
   }
 
-  const Autocomplete = ({ label, selected, setSelected, searchVal, setSearchVal, show, setShow }) => {
-    const suggestions = items.filter(i => 
-      i.itemName.toLowerCase().includes(searchVal.toLowerCase()) && 
-      !selected.find(s => s.id === i.id)
-    )
-    return (
-      <div className="relative flex-1 min-w-[240px]">
-        <label className="block text-[10px] font-bold text-gray-500 mb-1 uppercase tracking-wider">{label}</label>
-        <div className="border border-gray-300 rounded-lg p-1 bg-white flex flex-wrap gap-1 min-h-[38px] items-center shadow-sm">
-          {selected.map(item => (
-            <span key={item.id} className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded flex items-center gap-1 text-[11px] font-medium border border-gray-200">
-              {item.itemName}
-              <button onClick={() => setSelected(selected.filter(i => i.id !== item.id))} className="hover:text-red-500 ml-0.5 text-[10px]">✕</button>
-            </span>
-          ))}
-          <input 
-            value={searchVal} 
-            onChange={e => {
-              setSearchVal(e.target.value);
-              if (!show) setShow(true);
-            }} 
-            onFocus={() => setShow(true)} 
-            onKeyDown={e => {
-              if (e.key === 'Enter' && suggestions.length > 0) {
-                setSelected([...selected, suggestions[0]]);
-                setSearchVal('');
-                setShow(false);
-              }
-            }}
-            placeholder={selected.length === 0 ? "Search & select items..." : "Type more..."} 
-            className="flex-1 outline-none px-2 py-1 text-sm bg-transparent min-w-[120px]" 
-          />
-        </div>
-        {show && (
-          <>
-            <div className="fixed inset-0 z-10" onClick={() => setShow(false)}></div>
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-60 overflow-y-auto">
-              {suggestions.length > 0 ? (
-                suggestions.map(s => (
-                  <button key={s.id} onClick={() => { setSelected([...selected, s]); setSearchVal(''); setShow(false) }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors flex justify-between border-b last:border-0 border-gray-50">
-                    <span className="font-medium text-gray-700">{s.itemName}</span>
-                    <span className="text-[10px] text-gray-400 uppercase font-bold">{s.itemCategory}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="p-3 text-center text-xs text-gray-400 italic">No items found</div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
 
   // ── Tab Navigation Helpers ────────────────────────────────────────────────
   const TabBtn = ({ k, label }) => (
@@ -488,14 +461,15 @@ export default function Inventory() {
       {tab === 'master' && (
         <div className="space-y-4">
           <div className="flex gap-3 bg-white p-4 border border-gray-200 rounded-xl shadow-sm">
-            <Autocomplete 
+            <MultiSelectSearch 
               label="Search & Filter Items" 
               selected={masterSelectedItems} 
-              setSelected={setMasterSelectedItems} 
-              searchVal={masterSearch} 
-              setSearchVal={setMasterSearch} 
+              onToggle={i => setMasterSelectedItems(prev => prev.some(s => s.id === i.id) ? prev.filter(x => x.id !== i.id) : [...prev, i])}
               show={showItemsMaster} 
               setShow={setShowItemsMaster} 
+              onClear={() => setMasterSelectedItems([])}
+              options={items}
+              isItem={true}
             />
           </div>
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
@@ -555,8 +529,8 @@ export default function Inventory() {
               <option value="INWARD">▲ Stock IN</option>
               <option value="OUTWARD">▼ Stock OUT</option>
             </select>
-            <MultiSelect label="Sources" selected={todaySources} options={SOURCES} onToggle={s => setTodaySources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcToday} setShow={setShowSrcToday} onClear={() => setTodaySources([])} />
-            <Autocomplete label="Items" selected={todayItems} setSelected={setTodayItems} searchVal={itemSearchToday} setSearchVal={setItemSearchToday} show={showItemsToday} setShow={setShowItemsToday} />
+            <MultiSelectSearch label="Sources" selected={todaySources} options={SOURCES} onToggle={s => setTodaySources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcToday} setShow={setShowSrcToday} onClear={() => setTodaySources([])} />
+            <MultiSelectSearch label="Items" selected={todayItems} options={items} onToggle={i => setTodayItems(prev => prev.some(s => s.id === i.id) ? prev.filter(x => x.id !== i.id) : [...prev, i])} show={showItemsToday} setShow={setShowItemsToday} onClear={() => setTodayItems([])} isItem={true} />
             <div className="flex gap-2">
               <button onClick={fetchTodayHistory} className="bg-gray-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition-all h-[38px]">Apply</button>
               <ExportBtn rows={filteredToday} filename={`stock-today-${today()}.csv`} />
@@ -619,8 +593,8 @@ export default function Inventory() {
                 <option value="OUTWARD">▼ OUT</option>
               </select>
             </div>
-            <MultiSelect label="Sources" selected={histSources} options={SOURCES} onToggle={s => setHistSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcHist} setShow={setShowSrcHist} onClear={() => setHistSources([])} />
-            <Autocomplete label="Items" selected={histItems} setSelected={setHistItems} searchVal={itemSearchHist} setSearchVal={setItemSearchHist} show={showItemsHist} setShow={setShowItemsHist} />
+            <MultiSelectSearch label="Sources" selected={histSources} options={SOURCES} onToggle={s => setHistSources(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])} show={showSrcHist} setShow={setShowSrcHist} onClear={() => setHistSources([])} />
+            <MultiSelectSearch label="Items" selected={histItems} options={items} onToggle={i => setHistItems(prev => prev.some(s => s.id === i.id) ? prev.filter(x => x.id !== i.id) : [...prev, i])} show={showItemsHist} setShow={setShowItemsHist} onClear={() => setHistItems([])} isItem={true} />
             <div className="flex gap-2">
               <button onClick={fetchHistory} className="bg-gray-900 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-sm active:scale-95 transition-all h-[38px]">Apply</button>
               <ExportBtn rows={filteredHistory} filename={`stock-history-${dateFrom}-to-${dateTo}.csv`} />

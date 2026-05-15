@@ -25,6 +25,39 @@ const OrderHistory = () => {
         const options = { day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC' };
         return utcDate.toLocaleDateString('en-GB', options);
     };
+
+    // ── CSV Export helper ─────────────────────────────────────────────────────────
+    const exportCSV = (rows, filename) => {
+        const headers = ['Order Id', 'Name', 'Phone', 'Status', 'Order Type', 'Total Amount', 'Order Date', 'Delivery Date', 'Delivery Slot', 'Payment Method', 'Items'];
+        const csvContent = [
+            headers.join(','),
+            ...rows.map(r => {
+                const itemsStr = r.orderItems.map(i => `${i.item} (x${i.quantity})`).join('; ');
+                const values = [
+                    r.orderId,
+                    r.name,
+                    r.phone,
+                    r.status,
+                    r.orderType,
+                    r.totalAmount.toFixed(2),
+                    r.timeStamp,
+                    r.deliveryDate,
+                    r.deliverySlot,
+                    r.paymentMethod || '',
+                    itemsStr
+                ];
+                return values.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+            })
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
     
 
     const formatSlot = (slot) => {
@@ -183,6 +216,9 @@ const OrderHistory = () => {
                     className='border rounded p-2'
                 />
                 <Button onClick={fetchOrders}>Refresh</Button>
+                <Button variant="black" onClick={() => exportCSV(filteredOrders, `orders-${new Date().toISOString().split('T')[0]}.csv`)}>
+                    ⬇ Export CSV
+                </Button>
             </div>
 
             <div className='pb-5'>
