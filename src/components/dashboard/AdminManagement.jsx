@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react'
 import Card from '../ui/Card';
 import Button from '../ui/Button'
 import { useNavigate } from 'react-router-dom'
-import { User, Mail, Phone, Briefcase } from 'lucide-react';
+import { User, Mail, Phone, Briefcase, Trash2 } from 'lucide-react';
 import { apiRequest } from '../../utils/api';
 import Loader from '../ui/Loader';
+import toast from 'react-hot-toast';
 
 
 const AdminManagment = () => {
@@ -19,9 +20,6 @@ const AdminManagment = () => {
         fetchadminList();
     }, []);
 
-
-
-
     const fetchadminList = async () => {
         try {
             setLoading(true);
@@ -33,6 +31,25 @@ const AdminManagment = () => {
             console.error('Error fetching admin:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDeleteAdmin = async (e, adminId) => {
+        e.stopPropagation(); // Prevent navigation to details page
+        const confirmDelete = window.confirm(
+            'Are you sure you want to remove this admin?'
+        );
+        if (confirmDelete) {
+            try {
+                await apiRequest(`/superadmin/admin/${adminId}`, {
+                    method: 'DELETE',
+                });
+                toast.success('Admin deleted successfully');
+                fetchadminList(); // Refresh the list
+            } catch (err) {
+                console.error('Error deleting admin:', err);
+                toast.error('Failed to delete admin');
+            }
         }
     };
 
@@ -66,9 +83,18 @@ const AdminManagment = () => {
                     <Card
                         key={admin.id}
                         title=""
-                        className="cursor-pointer"
+                        className="cursor-pointer relative group"
                         onClick={() => navigate(`/admin/${admin.id}`)}
                     >
+                        {/* Remove Button */}
+                        <button
+                            onClick={(e) => handleDeleteAdmin(e, admin.id)}
+                            className="absolute top-2 right-2 p-2 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200"
+                            title="Remove Admin"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+
                         <div className="flex">
 
                             <div className="w-1/3">

@@ -93,6 +93,54 @@ const Customer = () => {
     setSelectedCustomer(null)
   }
 
+  const downloadCSV = (data, filename) => {
+    if (!data || data.length === 0) return alert('No data to download')
+    
+    const headers = [
+      'Customer Id',
+      'Wallet Id',
+      'Name',
+      'Year',
+      'Phone Number',
+      'Email',
+      'Wallet Balance',
+      'Total Orders',
+      'Total Purchase',
+      'Last Order Date'
+    ]
+
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => 
+        [
+          row.customerId,
+          row.walletId,
+          row.name,
+          row.year,
+          row.phoneNumber,
+          row.email,
+          row.walletBalance.replace('₹', '').replace(/,/g, ''),
+          row.totalOrders,
+          row.totalPurchase.replace('₹', '').replace(/,/g, ''),
+          row.lastOrderDate
+        ].map(val => {
+          const stringVal = String(val === undefined || val === null ? '' : val).replace(/"/g, '""')
+          return stringVal.includes(',') ? `"${stringVal}"` : stringVal
+        }).join(',')
+      )
+    ].join('\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -121,13 +169,19 @@ const Customer = () => {
       <h1 className="text-4xl font-bold">Customers Management</h1>
 
       {/* Search and Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-4">
+        <Button 
+          variant="black" 
+          onClick={() => downloadCSV(filteredCustomers, 'Customers_List')}
+        >
+          ⬇ Export CSV
+        </Button>
         <input
           type="text"
           placeholder="Search by ID or Name"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="border border-black px-3 py-2 rounded w-full sm:w-80 mt-2 sm:mt-0"
+          className="border border-black px-3 py-2 rounded w-full sm:w-80"
         />
       </div>
 
