@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -6,8 +6,10 @@ import { User } from 'lucide-react';
 import { apiRequest } from '../utils/api';
 import toast from 'react-hot-toast';
 import Loader from '../components/ui/Loader';
+import { AuthContext } from '../context/AuthContext';
 
 const AdminDetails = () => {
+    const { user } = useContext(AuthContext);
     const [activeTab, setActiveTab] = useState('details');
     const [selectedOutletId, setSelectedOutletId] = useState('');
 
@@ -257,9 +259,11 @@ const AdminDetails = () => {
                                 Update Details
                             </Button>
                         )}
-                        <Button variant="danger" onClick={handleDeleteAdmin}>
-                            Remove Admin
-                        </Button>
+                        {user && Number(user.id) !== Number(admin.id) && (
+                            <Button variant="danger" onClick={handleDeleteAdmin}>
+                                Remove Admin
+                            </Button>
+                        )}
                     </div>
                 </Card>
             )}

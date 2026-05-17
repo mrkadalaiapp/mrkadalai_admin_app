@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useContext } from 'react'
 import Card from '../ui/Card';
 import Button from '../ui/Button'
 import { useNavigate } from 'react-router-dom'
@@ -6,9 +6,11 @@ import { User, Mail, Phone, Briefcase, Trash2 } from 'lucide-react';
 import { apiRequest } from '../../utils/api';
 import Loader from '../ui/Loader';
 import toast from 'react-hot-toast';
+import { AuthContext } from '../../context/AuthContext';
 
 
 const AdminManagment = () => {
+    const { user } = useContext(AuthContext);
     const navigate = useNavigate()
     const [adminList, setadminList] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -87,13 +89,15 @@ const AdminManagment = () => {
                         onClick={() => navigate(`/admin/${admin.id}`)}
                     >
                         {/* Remove Button */}
-                        <button
-                            onClick={(e) => handleDeleteAdmin(e, admin.id)}
-                            className="absolute top-2 right-2 p-2 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200"
-                            title="Remove Admin"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
+                        {user && Number(user.id) !== Number(admin.id) && (
+                            <button
+                                onClick={(e) => handleDeleteAdmin(e, admin.id)}
+                                className="absolute top-2 right-2 p-2 bg-red-100 text-red-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-200"
+                                title="Remove Admin"
+                            >
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        )}
 
                         <div className="flex">
 
