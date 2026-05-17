@@ -40,6 +40,7 @@ const Ticket = () => {
         description: ticket.description,
         raisedBy: ticket.customerName,
         customerEmail: ticket.customerEmail,
+        customerPhone: ticket.customerPhone || 'N/A',
         priority: ticket.priority.toLowerCase(),
         status: ticket.status.toLowerCase(),
         originalId: ticket.ticketId,
@@ -99,7 +100,16 @@ const Ticket = () => {
     .map(ticket => [
       ticket.ticketId,
       formatDateWithSlashes(ticket.date),
-      ticket.description,
+      <div 
+        className="max-w-xs whitespace-normal break-words cursor-pointer hover:text-blue-600"
+        onClick={() => {
+          setSelectedTicketForView(ticket);
+          setShowViewModal(true);
+        }}
+        title="Click to view full details"
+      >
+        {ticket.description}
+      </div>,
       ticket.raisedBy,
       <Badge variant={ticket.priority} key={`${ticket.ticketId}-priority`}>
         {ticket.priority}
@@ -268,6 +278,7 @@ const Ticket = () => {
             <p><strong>Date:</strong> {selectedTicketForView.date}</p>
             <p><strong>Description:</strong> {selectedTicketForView.description}</p>
             <p><strong>Raised By:</strong> {selectedTicketForView.raisedBy}</p>
+            <p><strong>Phone Number:</strong> {selectedTicketForView.customerPhone}</p>
             <p><strong>Email:</strong> {selectedTicketForView.customerEmail}</p>
             <p><strong>Priority:</strong> {selectedTicketForView.priority}</p>
             <p><strong>Status:</strong> {selectedTicketForView.status}</p>
