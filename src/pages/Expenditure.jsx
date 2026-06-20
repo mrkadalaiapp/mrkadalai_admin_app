@@ -126,6 +126,14 @@ export default function Expenditure() {
   const [vendorPanel, setVendorPanel] = useState(false) // Vendor quick-select panel
   const [billPreview, setBillPreview] = useState(null)  // View bill modal URL
 
+  // Edit Expense form
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [editSelectedCategory, setEditSelectedCategory] = useState(null)
+  const [editFilteredNames, setEditFilteredNames] = useState([])
+  const [editTotalAmount, setEditTotalAmount] = useState(0)
+  const [editLoading, setEditLoading] = useState(false)
+
   // Masters sub-tab
   const [masterTab, setMasterTab] = useState('category')
   const [catForm, setCatForm] = useState({ name: '', isStockAffecting: false })
@@ -135,12 +143,21 @@ export default function Expenditure() {
 
   useEffect(() => { if (outletId) { fetchExpenses(); fetchMasterData() } }, [outletId])
 
-  // Auto-calc total
+  // Auto-calc total for Add form
   useEffect(() => {
     const q = parseFloat(form.quantity) || 0
     const p = parseFloat(form.unitPrice) || 0
     setTotalAmount(q && p ? (q * p).toFixed(2) : '')
   }, [form.quantity, form.unitPrice])
+
+  // Auto-calc total for Edit form
+  useEffect(() => {
+    if (editingExpense) {
+      const q = parseFloat(editForm.quantity) || 0
+      const p = parseFloat(editForm.unitPrice) || 0
+      setEditTotalAmount(q && p ? (q * p).toFixed(2) : editForm.amount)
+    }
+  }, [editForm.quantity, editForm.unitPrice, editingExpense])
 
   // Filter expense names when category changes
   useEffect(() => {
@@ -149,12 +166,25 @@ export default function Expenditure() {
       setSelectedCategory(cat || null)
       const names = expenseNames.filter(n => n.categoryId === parseInt(form.categoryId))
       setFilteredNames(names)
-      setForm(f => ({ ...f, expenseNameId: '' }))
+      setForm(f => ({ ...f, expenseNameId: f.expenseNameId || '' }))
     } else {
       setSelectedCategory(null)
       setFilteredNames([])
     }
   }, [form.categoryId, categories, expenseNames])
+
+  // Filter expense names when edit category changes
+  useEffect(() => {
+    if (editForm.categoryId) {
+      const cat = categories.find(c => c.id === parseInt(editForm.categoryId))
+      setEditSelectedCategory(cat || null)
+      const names = expenseNames.filter(n => n.categoryId === parseInt(editForm.categoryId))
+      setEditFilteredNames(names)
+    } else {
+      setEditSelectedCategory(null)
+      setEditFilteredNames([])
+    }
+  }, [editForm.categoryId, categories, expenseNames])
 
   const fetchMasterData = async () => {
     try {
@@ -226,6 +256,66 @@ export default function Expenditure() {
       fetchExpenses()
     } catch (e) { toast.error(e.message || 'Failed to add expense') }
     finally { setAddLoading(false) }
+  }
+
+  const handleDeleteExpense = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this expense? Any linked inventory stock will be reverted.')) return
+    try {
+      await apiRequest(`/superadmin/outlets/delete-expense/${id}`, { method: 'DELETE' })
+      toast.success('Expense deleted successfully')
+      fetchExpenses()
+    } catch (e) { toast.error(e.message || 'Failed to delete expense') }
+  }
+
+  const openEditModal = (exp) => {
+    const cat = categories.find(c => c.name === exp.category)
+    setEditForm({
+      expenseDate: new Date(exp.expenseDate).toISOString().split('T')[0],
+      categoryId: cat ? cat.id : '',
+      expenseNameId: exp.expenseNameId || '',
+      quantity: exp.quantity || '',
+      unit: exp.unit || '',
+      unitPrice: exp.unitPrice || '',
+      amount: exp.amount || '',
+      method: exp.method || 'CASH',
+      vendorName: exp.vendorName || ''
+    })
+    setEditTotalAmount(exp.amount)
+    setEditingExpense(exp)
+  }
+
+  const submitEditExpense = async () => {
+    if (!editForm.expenseDate || !editForm.method) return toast.error('Date and payment method are required')
+    
+    setEditLoading(true)
+    try {
+      const selectedName = editFilteredNames.find(n => n.id === parseInt(editForm.expenseNameId))
+      
+      const payload = {
+        expenseDate: editForm.expenseDate,
+        categoryId: editForm.categoryId ? parseInt(editForm.categoryId) : undefined,
+        category: editSelectedCategory?.name || editForm.category,
+        expenseNameId: editForm.expenseNameId ? parseInt(editForm.expenseNameId) : undefined,
+        description: selectedName?.name,
+        quantity: editForm.quantity ? parseFloat(editForm.quantity) : undefined,
+        unit: editForm.unit,
+        unitPrice: editForm.unitPrice ? parseFloat(editForm.unitPrice) : undefined,
+        amount: editTotalAmount ? parseFloat(editTotalAmount) : parseFloat(editForm.amount),
+        method: editForm.method,
+        vendorName: editForm.vendorName,
+        linkedInventoryItemId: selectedName?.linkedInventoryItemId || undefined
+      }
+
+      await apiRequest(`/superadmin/outlets/update-expense/${editingExpense.id}`, {
+        method: 'PUT',
+        body: payload
+      })
+
+      toast.success('Expense updated successfully')
+      setEditingExpense(null)
+      fetchExpenses()
+    } catch (e) { toast.error(e.message || 'Failed to update expense') }
+    finally { setEditLoading(false) }
   }
 
   // Masters handlers
@@ -329,7 +419,7 @@ export default function Expenditure() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
-                    {['Date','Category','Description','Qty','Amount','Method','Paid To','Bill'].map(h => (
+                    {['Date','Category','Description','Qty','Amount','Method','Paid To','Bill','Actions'].map(h => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wide">{h}</th>
                     ))}
                   </tr>
@@ -349,6 +439,12 @@ export default function Expenditure() {
                           ? <button onClick={() => setBillPreview(exp.billUrl)} className="text-blue-600 underline text-xs hover:text-blue-800">View Bill</button>
                           : <span className="text-gray-400 text-xs">—</span>
                         }
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-3">
+                          <button onClick={() => openEditModal(exp)} className="text-blue-500 hover:text-blue-700 text-sm font-medium">Edit</button>
+                          <button onClick={() => handleDeleteExpense(exp.id)} className="text-red-500 hover:text-red-700 text-sm font-medium">Delete</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -684,6 +780,87 @@ export default function Expenditure() {
                 ? <iframe src={billPreview} className="w-full h-[60vh] rounded" title="Bill PDF" />
                 : <img src={billPreview} alt="Bill" className="w-full rounded object-contain" />
               }
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Expense Modal ──────────────────────────────────────────────── */}
+      {editingExpense && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+              <h2 className="text-lg font-bold text-gray-900">Edit Expense</h2>
+              <button onClick={() => setEditingExpense(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
+            </div>
+            
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                  <input type="date" value={editForm.expenseDate} onChange={e => setEditForm(f=>({...f,expenseDate:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                  <select value={editForm.method} onChange={e => setEditForm(f=>({...f,method:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2">
+                    {PAYMENT_METHODS.map(m => <option key={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select value={editForm.categoryId} onChange={e => setEditForm(f=>({...f,categoryId:e.target.value, expenseNameId: ''}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2">
+                  <option value="">— Select Category —</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.isStockAffecting ? ' 📦' : ''}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Expense Name</label>
+                <SearchableSelect 
+                  options={editFilteredNames}
+                  value={editForm.expenseNameId}
+                  onChange={(id) => setEditForm(f => ({ ...f, expenseNameId: id }))}
+                  placeholder="Search item..."
+                  disabled={!editForm.categoryId}
+                  emptyMessage={editForm.categoryId ? "No names found." : "Select category."}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+                  <input type="number" value={editForm.quantity} onChange={e => setEditForm(f=>({...f,quantity:e.target.value}))} min="0" step="0.001" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input type="text" value={editForm.unit} onChange={e => setEditForm(f=>({...f,unit:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" placeholder="kg, litre, etc" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unit Price (₹)</label>
+                  <input type="number" value={editForm.unitPrice} onChange={e => setEditForm(f=>({...f,unitPrice:e.target.value}))} min="0" step="0.01" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Total Amount (₹)</label>
+                  <input type="number" value={editTotalAmount} onChange={e => {setEditTotalAmount(e.target.value); setEditForm(f=>({...f,amount:e.target.value}))}} min="0" step="0.01" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vendor / Paid To</label>
+                <input type="text" value={editForm.vendorName} onChange={e => setEditForm(f=>({...f,vendorName:e.target.value}))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2" />
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-100 flex gap-3 justify-end bg-gray-50 rounded-b-2xl">
+              <button onClick={() => setEditingExpense(null)} className="px-5 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+              <button onClick={submitEditExpense} disabled={editLoading} className="px-5 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                {editLoading ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           </div>
         </div>
