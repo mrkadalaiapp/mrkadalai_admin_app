@@ -216,17 +216,22 @@ export const AuthProvider = ({ children }) => {
         try {
             const response = await authService.checkAuth();
             if (response && response.user) {
-                dispatch({ type: 'LOGIN_SUCCESS', payload: response.user });
+                if (response.user.role === 'ADMIN' || response.user.role === 'SUPERADMIN') {
+                    dispatch({ type: 'LOGIN_SUCCESS', payload: response.user });
 
-                // Only set outlet for regular admins, not super admins
-                if (response.user.role !== 'SUPERADMIN' && response.user.outlets && response.user.outlets.length > 0) {
-                    const storedOutletId = getStoredOutletId();
-                    const validOutletId = storedOutletId &&
-                        response.user.outlets.some(outlet => outlet.outletId === storedOutletId)
-                        ? storedOutletId
-                        : response.user.outlets[0].outletId;
+                    // Only set outlet for regular admins, not super admins
+                    if (response.user.role !== 'SUPERADMIN' && response.user.outlets && response.user.outlets.length > 0) {
+                        const storedOutletId = getStoredOutletId();
+                        const validOutletId = storedOutletId &&
+                            response.user.outlets.some(outlet => outlet.outletId === storedOutletId)
+                            ? storedOutletId
+                            : response.user.outlets[0].outletId;
 
-                    dispatch({ type: 'SET_CURRENT_OUTLET', payload: validOutletId });
+                        dispatch({ type: 'SET_CURRENT_OUTLET', payload: validOutletId });
+                    }
+                } else {
+                    clearStoredData();
+                    dispatch({ type: 'LOGOUT' });
                 }
             } else {
                 clearStoredData();
