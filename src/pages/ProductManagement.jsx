@@ -8,7 +8,7 @@ import toast from 'react-hot-toast';
 import Loader from '../components/ui/Loader';
 import Badge from '../components/ui/Badge';
 
-const categories = ['All', 'Meals', 'Starters', 'Desserts', 'Beverages'];
+const categories = ['All', 'Meals', 'Starters', 'Desserts', 'Beverages', 'Combo'];
 // Define your API base URL here, consistent with your api.js
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5500/api';
 

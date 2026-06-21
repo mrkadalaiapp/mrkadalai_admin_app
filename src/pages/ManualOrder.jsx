@@ -100,6 +100,10 @@ const ManualOrder = () => {
                             variant={activeCategory === 'beverages' ? 'black' : 'secondary'}
                             onClick={() => setActiveCategory('beverages')}
                         >Beverages</Button>
+                        <Button
+                            variant={activeCategory === 'combo' ? 'black' : 'secondary'}
+                            onClick={() => setActiveCategory('combo')}
+                        >Combo</Button>
                     </div>
                 </div>
 
