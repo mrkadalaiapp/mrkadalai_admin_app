@@ -179,6 +179,7 @@ const ProductManagement = () => {
             const response = await fetch(`${API_BASE_URL}/superadmin/outlets/add-product/`, {
                 method: 'POST',
                 headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                credentials: 'include',
                 body: productFormData,
             });
             const data = await response.json();
@@ -225,6 +226,7 @@ const ProductManagement = () => {
             const response = await fetch(`${API_BASE_URL}/superadmin/outlets/update-product/${productToEdit.id}`, {
                 method: 'PUT',
                 headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+                credentials: 'include',
                 body: productFormData,
             });
             const data = await response.json();

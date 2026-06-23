@@ -245,6 +245,7 @@ export default function Expenditure() {
       const resp = await fetch(`${apiBase}/superadmin/outlets/add-expenses/`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
         body: fd,
       })
       if (!resp.ok) { const err = await resp.json(); throw new Error(err.message || 'Failed') }
