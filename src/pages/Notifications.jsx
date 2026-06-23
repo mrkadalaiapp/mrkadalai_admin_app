@@ -70,8 +70,9 @@ const Notifications = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
       });
       setScheduledNotifications(data.data);
     } catch (error) {
@@ -91,8 +92,9 @@ const Notifications = () => {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
       });
       setCoupons(data.data);
     } catch (error) {
@@ -109,8 +111,9 @@ const Notifications = () => {
       await apiRequest(`/superadmin/delete-coupon/${couponId}/`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
       });
       toast.success('Coupon deleted successfully');
       fetchCoupons();
@@ -126,8 +129,9 @@ const Notifications = () => {
       await apiRequest(`/superadmin/notifications/scheduled/${notificationId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
       });
       toast.success('Scheduled notification cancelled successfully');
       fetchScheduledNotifications(); // Refresh the list
@@ -214,7 +218,8 @@ const Notifications = () => {
     const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:5500/api';
     const resp = await fetch(`${apiBase}/superadmin/notifications/upload-image`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) },
+      credentials: 'include',
       body: formData,
     });
     const data = await resp.json();
@@ -250,8 +255,9 @@ const Notifications = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
         body: payload,
       });
 
@@ -307,8 +313,9 @@ const Notifications = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          ...(token && { 'Authorization': `Bearer ${token}` }),
         },
+        credentials: 'include',
         body: notificationData,
       });
 
@@ -353,8 +360,9 @@ const Notifications = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
+          credentials: 'include',
           body: {
             ...payload,
             priority: promotionFormData.type?.toUpperCase() || 'MEDIUM',
@@ -369,8 +377,9 @@ const Notifications = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
+          credentials: 'include',
           body: payload,
         });
         toast.success('Promotion sent immediately');
@@ -442,8 +451,9 @@ const handleCouponSubmit = async (e) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(token && { 'Authorization': `Bearer ${token}` }),
       },
+      credentials: 'include',
       body: couponData,
     });
 
@@ -466,8 +476,9 @@ const handleCouponSubmit = async (e) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            ...(token && { 'Authorization': `Bearer ${token}` }),
           },
+          credentials: 'include',
           body: notificationData,
         });
 

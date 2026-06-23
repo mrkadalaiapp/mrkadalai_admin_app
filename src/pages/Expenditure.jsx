@@ -244,7 +244,7 @@ export default function Expenditure() {
       const apiBase = import.meta.env.VITE_API_URL || 'http://13.201.49.59:5500/api'
       const resp = await fetch(`${apiBase}/superadmin/outlets/add-expenses/`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { ...(token && { Authorization: `Bearer ${token}` }) },
         credentials: 'include',
         body: fd,
       })
